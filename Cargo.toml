@@ -1,6 +1,15 @@
+[workspace]
+members = ["macros"]
+
 [package]
 name = "balsaq"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+balsaq-macros = { path = "macros" }
+const_format = "0.2.36"
+rusqlite = "0.39"
+
+[dev-dependencies]
+trybuild = "1"

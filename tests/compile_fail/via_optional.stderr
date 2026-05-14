@@ -1,0 +1,5 @@
+error: #[group(via = ...)] takes no further arguments
+  --> tests/compile_fail/via_optional.rs:12:22
+   |
+12 |     #[group(via = Raw, extra)]
+   |                      ^

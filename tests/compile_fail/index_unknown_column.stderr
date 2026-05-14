@@ -1,0 +1,5 @@
+error: unknown column `nonexistent`; not a plain field of this struct
+ --> tests/compile_fail/index_unknown_column.rs:4:9
+  |
+4 | #[index(nonexistent)]
+  |         ^^^^^^^^^^^

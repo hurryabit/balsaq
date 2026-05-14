@@ -1,0 +1,5 @@
+error: #[table] only supports structs with named fields
+ --> tests/compile_fail/tuple_struct.rs:4:12
+  |
+4 | pub struct Thing(String);
+  |            ^^^^^

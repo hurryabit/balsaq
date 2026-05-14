@@ -1,0 +1,5 @@
+error: `author` is a #[group] field; only plain column fields can be indexed
+  --> tests/compile_fail/index_column_group_field.rs:10:9
+   |
+10 | #[index(author)]
+   |         ^^^^^^

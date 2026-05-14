@@ -1,0 +1,5 @@
+error: derive(Column) requires a single-field tuple struct
+ --> tests/compile_fail/derive_column_named_fields.rs:4:12
+  |
+4 | pub struct Foo {
+  |            ^^^

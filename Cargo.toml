@@ -5,6 +5,13 @@ members = ["macros"]
 name = "balsaq"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+authors = ["Martin Huschenbett <martin.huschenbett@posteo.me>"]
+description = "Proc-macro library that eliminates rusqlite boilerplate"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/hurryabit/balsaq"
+keywords = ["rusqlite", "sqlite", "database", "orm", "proc-macro"]
+categories = ["database", "development-tools::procedural-macro-implementations"]
 
 [dependencies]
 balsaq-macros = { path = "macros" }

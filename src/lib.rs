@@ -112,6 +112,34 @@ pub fn get_all<T: Model, P: rusqlite::Params>(
         .collect()
 }
 
+pub trait ConnectionExt {
+    fn insert<T: Model>(&self, value: T) -> rusqlite::Result<()>;
+    fn get_all<T: Model, P: rusqlite::Params>(
+        &self,
+        sql: &'static str,
+        params: P,
+    ) -> rusqlite::Result<Vec<T>>;
+    fn get<'pk, T: Model>(&self, pk: T::PrimaryKey<'pk>) -> rusqlite::Result<T>;
+}
+
+impl ConnectionExt for Connection {
+    fn insert<T: Model>(&self, value: T) -> rusqlite::Result<()> {
+        crate::insert(self, value)
+    }
+
+    fn get_all<T: Model, P: rusqlite::Params>(
+        &self,
+        sql: &'static str,
+        params: P,
+    ) -> rusqlite::Result<Vec<T>> {
+        crate::get_all(self, sql, params)
+    }
+
+    fn get<'pk, T: Model>(&self, pk: T::PrimaryKey<'pk>) -> rusqlite::Result<T> {
+        T::get(self, pk)
+    }
+}
+
 /// A group of SQL columns that always appear together under a shared prefix, in declaration order.
 /// Generated automatically by `#[group]` on a struct.
 ///

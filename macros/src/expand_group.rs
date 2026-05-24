@@ -164,7 +164,9 @@ mod tests {
     use quote::quote;
 
     fn run(item: TokenStream) -> String {
-        expand(item).unwrap().to_string()
+        let tokens = expand(item).unwrap();
+        let file: syn::File = syn::parse2(tokens).unwrap();
+        prettyplease::unparse(&file)
     }
 
     fn run_err(item: TokenStream) -> String {
@@ -173,48 +175,32 @@ mod tests {
 
     #[test]
     fn generates_placeholder_constants() {
-        let out = run(quote! {
+        insta::assert_snapshot!(run(quote! {
             pub struct Point {
                 pub x: i64,
                 pub y: i64,
             }
-        });
-        assert!(out.contains("{P}x"));
-        assert!(out.contains("{P}y"));
-        assert!(out.contains("{P}x, {P}y"));
-        assert!(out.contains(":{P}x, :{P}y"));
-        assert!(out.contains("Column") && out.contains("SQL_TYPE"));
+        }));
     }
 
     #[test]
     fn always_emits_all_four_methods() {
-        let out = run(quote! {
+        insta::assert_snapshot!(run(quote! {
             pub struct Sig {
                 pub data: Vec<u8>,
                 pub hash: Vec<u8>,
             }
-        });
-        assert!(out.contains("cg_read"));
-        assert!(out.contains("cg_write"));
-        assert!(out.contains("cg_read_optional"));
-        assert!(out.contains("cg_write_null"));
-        assert!(out.contains("Option"));
-        assert!(out.contains("Null"));
+        }));
     }
 
     #[test]
     fn all_columns_checked_for_null() {
-        let out = run(quote! {
+        insta::assert_snapshot!(run(quote! {
             pub struct AllOpt {
                 pub label: Option<String>,
                 pub note: Option<String>,
             }
-        });
-        // Both columns must appear in the all-null check, not just the first.
-        assert!(out.contains("label"));
-        assert!(out.contains("note"));
-        assert!(out.contains("ValueRef :: Null") || out.contains("ValueRef::Null"));
-        assert!(out.contains("matches !") || out.contains("matches!"));
+        }));
     }
 
     #[test]

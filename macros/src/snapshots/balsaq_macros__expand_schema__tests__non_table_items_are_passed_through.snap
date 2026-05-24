@@ -1,0 +1,14 @@
+---
+source: macros/src/expand_schema.rs
+expression: "run(quote! {}, quote!\n{\n    mod db\n    {\n        pub struct Helper; #[column_set] pub struct Info {} #[table(\"t\")] pub\n        struct T {}\n    }\n},)"
+---
+mod db {
+    pub struct Helper;
+    #[column_set]
+    pub struct Info {}
+    #[table("t")]
+    pub struct T {}
+    pub const SCHEMA: &'static str = ::balsaq::__cf::concatcp!(
+        < T as ::balsaq::Model > ::CREATE_TABLE
+    );
+}

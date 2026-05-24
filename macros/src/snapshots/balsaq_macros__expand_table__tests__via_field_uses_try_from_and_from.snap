@@ -1,0 +1,73 @@
+---
+source: macros/src/expand_table.rs
+expression: "run(quote! { \"tree_entries\" }, quote!\n{\n    pub struct TreeEntry\n    {\n        pub tree_id: TreeId, #[group(via = TreeValueRaw)] pub value:\n        TreeValue,\n    }\n},)"
+---
+pub struct TreeEntry {
+    pub tree_id: TreeId,
+    pub value: TreeValue,
+}
+impl ::balsaq::Model for TreeEntry {
+    const CREATE_TABLE: &'static str = ::balsaq::__cf::concatcp!(
+        "CREATE TABLE IF NOT EXISTS tree_entries (\n", "    tree_id ",
+        ::balsaq::__cf::str_replace!(< TreeId as ::balsaq::Column > ::SQL_TYPE, "{col}",
+        "tree_id"), ::balsaq::__null_qualifier(< TreeId as ::balsaq::Column >
+        ::NULLABLE), ",\n", ::balsaq::__cf::str_replace!(::balsaq::__cf::str_replace!(<
+        TreeValueRaw as ::balsaq::ColumnGroup > ::DDL, "{P}", "value_"), "{NN}",
+        " NOT NULL"), "\n);\n"
+    );
+    const SELECT: &'static str = ::balsaq::__cf::concatcp!(
+        "SELECT ", "tree_id", ", ", ::balsaq::__cf::str_replace!(< TreeValueRaw as
+        ::balsaq::ColumnGroup > ::COLS, "{P}", "value_"), " FROM tree_entries"
+    );
+    const INSERT: &'static str = ::balsaq::__cf::concatcp!(
+        "INSERT INTO tree_entries (", "tree_id", ", ", ::balsaq::__cf::str_replace!(<
+        TreeValueRaw as ::balsaq::ColumnGroup > ::COLS, "{P}", "value_"), ") VALUES (",
+        ":tree_id", ", ", ::balsaq::__cf::str_replace!(< TreeValueRaw as
+        ::balsaq::ColumnGroup > ::VALS, "{P}", "value_"), ") ON CONFLICT DO NOTHING"
+    );
+    type PrimaryKey<'pk> = &'pk ::std::convert::Infallible;
+    fn from_row(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<Self> {
+        Ok(Self {
+            tree_id: row.get("tree_id")?,
+            value: {
+                let __raw = <TreeValueRaw as ::balsaq::ColumnGroup>::cg_read(
+                    row,
+                    "value_",
+                )?;
+                <TreeValue as ::std::convert::TryFrom<TreeValueRaw>>::try_from(__raw)?
+            },
+        })
+    }
+    fn write_params(
+        self,
+        stmt: &mut ::rusqlite::CachedStatement<'_>,
+    ) -> ::rusqlite::Result<usize> {
+        let __raw_value = <TreeValueRaw as ::std::convert::From<
+            TreeValue,
+        >>::from(self.value);
+        let mut params: ::std::vec::Vec<
+            (::std::string::String, &dyn ::rusqlite::types::ToSql),
+        > = ::std::vec::Vec::new();
+        params
+            .push((
+                ":tree_id".to_owned(),
+                &self.tree_id as &dyn ::rusqlite::types::ToSql,
+            ));
+        <TreeValueRaw as ::balsaq::ColumnGroup>::cg_write(
+            &__raw_value,
+            "value_",
+            &mut params,
+        );
+        let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .collect();
+        stmt.execute(params_ref.as_slice())
+    }
+    fn get<'pk>(
+        _conn: &::rusqlite::Connection,
+        pk: Self::PrimaryKey<'pk>,
+    ) -> ::rusqlite::Result<Self> {
+        match *pk {}
+    }
+}

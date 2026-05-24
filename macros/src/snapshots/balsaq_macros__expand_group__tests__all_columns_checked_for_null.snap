@@ -1,0 +1,82 @@
+---
+source: macros/src/expand_group.rs
+expression: "run(quote!\n{\n    pub struct AllOpt { pub label: Option<String>, pub note: Option<String>, }\n})"
+---
+pub struct AllOpt {
+    pub label: Option<String>,
+    pub note: Option<String>,
+}
+impl ::balsaq::ColumnGroup for AllOpt {
+    const DDL: &'static str = ::balsaq::__cf::concatcp!(
+        "    {P}label ", ::balsaq::__cf::str_replace!(< Option < String > as
+        ::balsaq::Column > ::SQL_TYPE, "{col}", "{P}label"), ::balsaq::__nn_placeholder(<
+        Option < String > as ::balsaq::Column > ::NULLABLE), ",\n", "    {P}note ",
+        ::balsaq::__cf::str_replace!(< Option < String > as ::balsaq::Column >
+        ::SQL_TYPE, "{col}", "{P}note"), ::balsaq::__nn_placeholder(< Option < String >
+        as ::balsaq::Column > ::NULLABLE)
+    );
+    const COLS: &'static str = "{P}label, {P}note";
+    const VALS: &'static str = ":{P}label, :{P}note";
+    const NULLABLE: bool = false;
+    fn cg_read(row: &::rusqlite::Row<'_>, prefix: &str) -> ::rusqlite::Result<Self> {
+        Ok(Self {
+            label: row.get(format!("{prefix}{}", "label").as_str())?,
+            note: row.get(format!("{prefix}{}", "note").as_str())?,
+        })
+    }
+    fn cg_write<'a>(
+        &'a self,
+        prefix: &str,
+        out: &mut ::std::vec::Vec<
+            (::std::string::String, &'a dyn ::rusqlite::types::ToSql),
+        >,
+    ) {
+        out.push((
+            format!(":{prefix}{}", "label"),
+            &self.label as &dyn ::rusqlite::types::ToSql,
+        ));
+        out.push((
+            format!(":{prefix}{}", "note"),
+            &self.note as &dyn ::rusqlite::types::ToSql,
+        ));
+    }
+    fn cg_read_optional(
+        row: &::rusqlite::Row<'_>,
+        prefix: &str,
+    ) -> ::rusqlite::Result<::std::option::Option<Self>> {
+        if matches!(
+            row.get_ref(format!("{prefix}{}", "label") .as_str()) ?,
+            ::rusqlite::types::ValueRef::Null
+        )
+            && matches!(
+                row.get_ref(format!("{prefix}{}", "note") .as_str()) ?,
+                ::rusqlite::types::ValueRef::Null
+            )
+        {
+            ::std::result::Result::Ok(::std::option::Option::None)
+        } else {
+            ::std::result::Result::Ok(
+                ::std::option::Option::Some(Self {
+                    label: row.get(format!("{prefix}{}", "label").as_str())?,
+                    note: row.get(format!("{prefix}{}", "note").as_str())?,
+                }),
+            )
+        }
+    }
+    fn cg_write_null<'a>(
+        prefix: &str,
+        out: &mut ::std::vec::Vec<
+            (::std::string::String, &'a dyn ::rusqlite::types::ToSql),
+        >,
+    ) {
+        static NULL: ::rusqlite::types::Null = ::rusqlite::types::Null;
+        out.push((
+            format!(":{prefix}{}", "label"),
+            &NULL as &dyn ::rusqlite::types::ToSql,
+        ));
+        out.push((
+            format!(":{prefix}{}", "note"),
+            &NULL as &dyn ::rusqlite::types::ToSql,
+        ));
+    }
+}

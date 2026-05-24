@@ -60,7 +60,9 @@ mod tests {
     use quote::quote;
 
     fn run(attr: TokenStream, item: TokenStream) -> String {
-        expand(attr, item).unwrap().to_string()
+        let tokens = expand(attr, item).unwrap();
+        let file: syn::File = syn::parse2(tokens).unwrap();
+        prettyplease::unparse(&file)
     }
 
     fn run_err(attr: TokenStream, item: TokenStream) -> String {
@@ -69,7 +71,7 @@ mod tests {
 
     #[test]
     fn single_table_generates_schema() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! {},
             quote! {
                 mod db {
@@ -77,15 +79,12 @@ mod tests {
                     pub struct Widget {}
                 }
             },
-        );
-        assert!(out.contains("SCHEMA"));
-        assert!(out.contains("Widget") && out.contains("CREATE_TABLE"));
-        assert!(out.contains("concatcp"));
+        ));
     }
 
     #[test]
     fn multiple_tables_all_appear_in_schema() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! {},
             quote! {
                 mod db {
@@ -95,14 +94,12 @@ mod tests {
                     pub struct Post {}
                 }
             },
-        );
-        assert!(out.contains("Widget") && out.contains("CREATE_TABLE"));
-        assert!(out.contains("Post") && out.contains("CREATE_TABLE"));
+        ));
     }
 
     #[test]
     fn non_table_items_are_passed_through() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! {},
             quote! {
                 mod db {
@@ -113,12 +110,7 @@ mod tests {
                     pub struct T {}
                 }
             },
-        );
-        assert!(out.contains("Helper"));
-        assert!(out.contains("Info"));
-        // Only T ends up in the SCHEMA Model reference, not Helper or Info.
-        assert!(out.contains("CREATE_TABLE"));
-        assert!(!out.contains("Helper as"));
+        ));
     }
 
     #[test]

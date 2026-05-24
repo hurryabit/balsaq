@@ -1,0 +1,61 @@
+---
+source: macros/src/expand_table.rs
+expression: "run(quote! { \"things\" }, quote!\n{\n    pub struct Thing\n    { #[primary_key] pub a: A, #[primary_key] pub b: i64, pub label: String, }\n},)"
+---
+pub struct Thing {
+    pub a: A,
+    pub b: i64,
+    pub label: String,
+}
+impl ::balsaq::Model for Thing {
+    const CREATE_TABLE: &'static str = ::balsaq::__cf::concatcp!(
+        "CREATE TABLE IF NOT EXISTS things (\n", "    a ", ::balsaq::__cf::str_replace!(<
+        A as ::balsaq::Column > ::SQL_TYPE, "{col}", "a"), ::balsaq::__null_qualifier(< A
+        as ::balsaq::Column > ::NULLABLE), ",\n", "    b ",
+        ::balsaq::__cf::str_replace!(< i64 as ::balsaq::Column > ::SQL_TYPE, "{col}",
+        "b"), ::balsaq::__null_qualifier(< i64 as ::balsaq::Column > ::NULLABLE), ",\n",
+        "    label ", ::balsaq::__cf::str_replace!(< String as ::balsaq::Column >
+        ::SQL_TYPE, "{col}", "label"), ::balsaq::__null_qualifier(< String as
+        ::balsaq::Column > ::NULLABLE), ",\n    PRIMARY KEY (a, b)", "\n);\n"
+    );
+    const SELECT: &'static str = ::balsaq::__cf::concatcp!(
+        "SELECT ", "a", ", ", "b", ", ", "label", " FROM things"
+    );
+    const INSERT: &'static str = ::balsaq::__cf::concatcp!(
+        "INSERT INTO things (", "a", ", ", "b", ", ", "label", ") VALUES (", ":a", ", ",
+        ":b", ", ", ":label", ") ON CONFLICT DO NOTHING"
+    );
+    type PrimaryKey<'pk> = (&'pk A, &'pk i64);
+    fn from_row(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<Self> {
+        Ok(Self {
+            a: row.get("a")?,
+            b: row.get("b")?,
+            label: row.get("label")?,
+        })
+    }
+    fn write_params(
+        self,
+        stmt: &mut ::rusqlite::CachedStatement<'_>,
+    ) -> ::rusqlite::Result<usize> {
+        let mut params: ::std::vec::Vec<
+            (::std::string::String, &dyn ::rusqlite::types::ToSql),
+        > = ::std::vec::Vec::new();
+        params.push((":a".to_owned(), &self.a as &dyn ::rusqlite::types::ToSql));
+        params.push((":b".to_owned(), &self.b as &dyn ::rusqlite::types::ToSql));
+        params.push((":label".to_owned(), &self.label as &dyn ::rusqlite::types::ToSql));
+        let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .collect();
+        stmt.execute(params_ref.as_slice())
+    }
+    fn get<'pk>(
+        conn: &::rusqlite::Connection,
+        pk: Self::PrimaryKey<'pk>,
+    ) -> ::rusqlite::Result<Self> {
+        const SQL: &str = ::balsaq::__cf::concatcp!(
+            Thing::SELECT, " WHERE a = ?1 AND b = ?2"
+        );
+        conn.prepare_cached(SQL)?.query_row((pk.0, pk.1), Self::from_row)
+    }
+}

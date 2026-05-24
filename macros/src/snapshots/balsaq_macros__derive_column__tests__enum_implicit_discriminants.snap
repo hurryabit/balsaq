@@ -1,0 +1,29 @@
+---
+source: macros/src/derive_column.rs
+expression: "run(quote! { #[repr(i64)] pub enum Tri { X, Y, Z } })"
+---
+impl ::rusqlite::types::ToSql for Tri {
+    fn to_sql(&self) -> ::rusqlite::Result<::rusqlite::types::ToSqlOutput<'_>> {
+        ::std::result::Result::Ok((*self as i64).into())
+    }
+}
+impl ::rusqlite::types::FromSql for Tri {
+    fn column_result(
+        value: ::rusqlite::types::ValueRef<'_>,
+    ) -> ::rusqlite::types::FromSqlResult<Self> {
+        match <i64 as ::rusqlite::types::FromSql>::column_result(value)? {
+            0i64 => ::std::result::Result::Ok(Self::X),
+            1i64 => ::std::result::Result::Ok(Self::Y),
+            2i64 => ::std::result::Result::Ok(Self::Z),
+            n => {
+                ::std::result::Result::Err(
+                    ::rusqlite::types::FromSqlError::OutOfRange(n),
+                )
+            }
+        }
+    }
+}
+impl ::balsaq::Column for Tri {
+    const SQL_TYPE: &'static str = "INTEGER CHECK ({col} IN (0, 1, 2))";
+    const NULLABLE: bool = false;
+}

@@ -117,12 +117,21 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
     let mut item_struct: ItemStruct = syn::parse2(item)?;
     let struct_name = item_struct.ident.clone();
 
-    // Collect and strip #[index] attrs from the struct before re-emitting it.
+    // Collect and strip #[index] and #[track_last_update] attrs from the struct before re-emitting it.
     let mut indices: Vec<IndexArgs> = Vec::new();
+    let mut track_last_update = false;
     let mut kept_attrs = Vec::new();
     for attr in item_struct.attrs.drain(..) {
         if attr.path().is_ident("index") {
             indices.push(attr.parse_args::<IndexArgs>()?);
+        } else if attr.path().is_ident("track_last_update") {
+            if !matches!(attr.meta, Meta::Path(_)) {
+                return Err(Error::new(
+                    attr.span(),
+                    "#[track_last_update] takes no arguments",
+                ));
+            }
+            track_last_update = true;
         } else {
             kept_attrs.push(attr);
         }
@@ -286,6 +295,18 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         })
         .collect();
 
+    if track_last_update {
+        if pk_field_info.is_empty() {
+            return Err(Error::new(
+                struct_name.span(),
+                "#[track_last_update] requires at least one #[primary_key] field",
+            ));
+        }
+        ddl_args.push(quote! {
+            ",\n    __last_written_ms INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)"
+        });
+    }
+
     if !pk_field_info.is_empty() {
         let pk_names = pk_field_info
             .iter()
@@ -335,7 +356,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
     sel_args.push(quote! { #from_suffix });
 
     // INSERT col and val pieces
-    let ins_prefix = format!("INSERT OR IGNORE INTO {table} (");
+    let ins_prefix = format!("INSERT INTO {table} (");
     let mut ins_col_args: Vec<TokenStream> = Vec::new();
     let mut ins_val_args: Vec<TokenStream> = Vec::new();
     for (i, f) in fields.iter().enumerate() {
@@ -368,6 +389,20 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
             }
         }
     }
+
+    let pk_cols = pk_field_info
+        .iter()
+        .map(|(id, _)| id.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ins_suffix = if track_last_update {
+        format!(
+            ") ON CONFLICT({pk_cols}) DO UPDATE SET \
+             __last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000)"
+        )
+    } else {
+        ") ON CONFLICT DO NOTHING".to_owned()
+    };
 
     // from_row and write_params code
     let from_row_fields = fields.iter().map(|f| {
@@ -495,7 +530,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
                 #(#ins_col_args),*,
                 ") VALUES (",
                 #(#ins_val_args),*,
-                ")"
+                #ins_suffix
             );
 
             type PrimaryKey<'pk> = #pk_type;
@@ -545,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn single_column_no_pk() {
+    fn single_column_no_pk_uses_do_nothing() {
         let out = run(
             quote! { "things" },
             quote! {
@@ -559,7 +594,8 @@ mod tests {
         assert!(out.contains("Column") && out.contains("SQL_TYPE"));
         assert!(!out.contains("PRIMARY KEY"));
         assert!(out.contains("FROM things"));
-        assert!(out.contains("INSERT OR IGNORE INTO things"));
+        assert!(out.contains("INSERT INTO things"));
+        assert!(out.contains("ON CONFLICT DO NOTHING"));
         assert!(out.contains(":name"));
     }
 
@@ -837,6 +873,83 @@ mod tests {
             },
         );
         assert!(err.contains("unknown column `nonexistent`"));
+    }
+
+    #[test]
+    fn track_last_update_ddl_and_insert() {
+        let out = run(
+            quote! { "commits" },
+            quote! {
+                #[track_last_update]
+                pub struct Commit {
+                    #[primary_key]
+                    pub id: BlobId,
+                    pub data: String,
+                }
+            },
+        );
+        // DDL must include the hidden column with its DEFAULT.
+        assert!(
+            out.contains("__last_written_ms INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)")
+        );
+        // INSERT must be a plain INSERT (not INSERT OR IGNORE) …
+        assert!(out.contains("INSERT INTO commits"));
+        assert!(!out.contains("INSERT OR IGNORE"));
+        // … with an ON CONFLICT upsert that applies MAX.
+        assert!(out.contains("ON CONFLICT(id) DO UPDATE SET __last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000)"));
+        // SELECT must NOT include __last_written_ms.
+        assert!(
+            !out.contains("SELECT __last_written_ms") && !out.contains("__last_written_ms FROM")
+        );
+    }
+
+    #[test]
+    fn track_last_update_compound_pk() {
+        let out = run(
+            quote! { "operation_parents" },
+            quote! {
+                #[track_last_update]
+                pub struct OperationParent {
+                    #[primary_key]
+                    pub operation_id: OpId,
+                    #[primary_key]
+                    pub position: i64,
+                    pub parent_id: OpId,
+                }
+            },
+        );
+        assert!(
+            out.contains("ON CONFLICT(operation_id, position) DO UPDATE SET __last_written_ms")
+        );
+    }
+
+    #[test]
+    fn error_track_last_update_without_pk() {
+        let err = run_err(
+            quote! { "things" },
+            quote! {
+                #[track_last_update]
+                pub struct Thing {
+                    pub name: String,
+                }
+            },
+        );
+        assert!(err.contains("#[track_last_update] requires at least one #[primary_key]"));
+    }
+
+    #[test]
+    fn error_track_last_update_with_args() {
+        let err = run_err(
+            quote! { "things" },
+            quote! {
+                #[track_last_update(oops)]
+                pub struct Thing {
+                    #[primary_key]
+                    pub id: i64,
+                }
+            },
+        );
+        assert!(err.contains("takes no arguments"));
     }
 
     #[test]

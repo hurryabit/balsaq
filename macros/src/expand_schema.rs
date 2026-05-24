@@ -116,9 +116,9 @@ mod tests {
         );
         assert!(out.contains("Helper"));
         assert!(out.contains("Info"));
-        // Only T ends up in SCHEMA, not Helper or Info
+        // Only T ends up in the SCHEMA Model reference, not Helper or Info.
         assert!(out.contains("CREATE_TABLE"));
-        assert!(!out.contains("Helper"));
+        assert!(!out.contains("Helper as"));
     }
 
     #[test]

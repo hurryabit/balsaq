@@ -572,7 +572,9 @@ mod tests {
     use quote::quote;
 
     fn run(attr: TokenStream, item: TokenStream) -> String {
-        expand(attr, item).unwrap().to_string()
+        let tokens = expand(attr, item).unwrap();
+        let file: syn::File = syn::parse2(tokens).unwrap();
+        prettyplease::unparse(&file)
     }
 
     fn run_err(attr: TokenStream, item: TokenStream) -> String {
@@ -581,27 +583,19 @@ mod tests {
 
     #[test]
     fn single_column_no_pk_uses_do_nothing() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "things" },
             quote! {
                 pub struct Thing {
                     pub name: String,
                 }
             },
-        );
-        assert!(out.contains("CREATE TABLE IF NOT EXISTS things"));
-        assert!(out.contains("name"));
-        assert!(out.contains("Column") && out.contains("SQL_TYPE"));
-        assert!(!out.contains("PRIMARY KEY"));
-        assert!(out.contains("FROM things"));
-        assert!(out.contains("INSERT INTO things"));
-        assert!(out.contains("ON CONFLICT DO NOTHING"));
-        assert!(out.contains(":name"));
+        ));
     }
 
     #[test]
     fn primary_key_annotation() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "commit_root_trees" },
             quote! {
                 pub struct CommitRootTree {
@@ -612,17 +606,12 @@ mod tests {
                     pub label: String,
                 }
             },
-        );
-        assert!(out.contains("PRIMARY KEY (commit_id, position)"));
-        assert!(out.contains("commit_root_trees"));
-        assert!(out.contains("commit_id"));
-        assert!(out.contains("position"));
-        assert!(out.contains("label"));
+        ));
     }
 
     #[test]
     fn group_field() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "posts" },
             quote! {
                 pub struct Post {
@@ -632,17 +621,12 @@ mod tests {
                     pub author: AuthorInfo,
                 }
             },
-        );
-        assert!(out.contains("AuthorInfo"));
-        assert!(out.contains("author_"));
-        assert!(out.contains("str_replace"));
-        assert!(out.contains("cg_read"));
-        assert!(out.contains("cg_write"));
+        ));
     }
 
     #[test]
     fn group_optional_field() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "posts" },
             quote! {
                 pub struct Post {
@@ -652,17 +636,12 @@ mod tests {
                     pub sig: Option<SigInfo>,
                 }
             },
-        );
-        assert!(out.contains("SigInfo"));
-        assert!(out.contains("sig_"));
-        assert!(out.contains("cg_read"));
-        assert!(out.contains("cg_write"));
-        assert!(out.contains("NULLABLE"));
+        ));
     }
 
     #[test]
     fn via_field_uses_try_from_and_from() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "tree_entries" },
             quote! {
                 pub struct TreeEntry {
@@ -671,18 +650,7 @@ mod tests {
                     pub value: TreeValue,
                 }
             },
-        );
-        assert!(out.contains("TreeValueRaw"));
-        assert!(out.contains("ColumnGroup"));
-        assert!(out.contains("str_replace"));
-        assert!(out.contains("value_"));
-        assert!(out.contains("cg_read"));
-        assert!(out.contains("TryFrom"));
-        assert!(out.contains("try_from"));
-        assert!(out.contains("__raw_value"));
-        assert!(out.contains("From"));
-        assert!(out.contains("cg_write"));
-        assert!(out.contains("TreeValue"));
+        ));
     }
 
     #[test]
@@ -756,7 +724,7 @@ mod tests {
 
     #[test]
     fn single_index_generated() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "widgets" },
             quote! {
                 #[index(name)]
@@ -766,14 +734,12 @@ mod tests {
                     pub name: String,
                 }
             },
-        );
-        assert!(out.contains("CREATE INDEX IF NOT EXISTS idx_widgets_name ON widgets (name)"));
-        assert!(!out.contains("# [index]"));
+        ));
     }
 
     #[test]
     fn unique_index_generated() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "users" },
             quote! {
                 #[index(email, unique = true)]
@@ -783,13 +749,12 @@ mod tests {
                     pub email: String,
                 }
             },
-        );
-        assert!(out.contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (email)"));
+        ));
     }
 
     #[test]
     fn multi_column_index_generated() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "posts" },
             quote! {
                 #[index(author_id, created_at)]
@@ -800,15 +765,12 @@ mod tests {
                     pub created_at: i64,
                 }
             },
-        );
-        assert!(out.contains(
-            "CREATE INDEX IF NOT EXISTS idx_posts_author_id_created_at ON posts (author_id, created_at)"
         ));
     }
 
     #[test]
     fn single_pk_generates_primary_key_type_and_get() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "widgets" },
             quote! {
                 pub struct Widget {
@@ -817,16 +779,12 @@ mod tests {
                     pub name: String,
                 }
             },
-        );
-        assert!(out.contains("PrimaryKey"));
-        assert!(out.contains("BlobId"));
-        assert!(out.contains("WHERE id = ?1"));
-        assert!(out.contains("query_row"));
+        ));
     }
 
     #[test]
     fn compound_pk_generates_tuple_type_and_get() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "things" },
             quote! {
                 pub struct Thing {
@@ -837,28 +795,19 @@ mod tests {
                     pub label: String,
                 }
             },
-        );
-        assert!(out.contains("PrimaryKey"));
-        assert!(out.contains("'pk"));
-        assert!(out.contains("A") && out.contains("i64"));
-        assert!(out.contains("WHERE a = ?1 AND b = ?2"));
-        assert!(out.contains("pk . 0") || out.contains("pk.0"));
-        assert!(out.contains("pk . 1") || out.contains("pk.1"));
+        ));
     }
 
     #[test]
     fn no_pk_generates_infallible() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "things" },
             quote! {
                 pub struct Thing {
                     pub name: String,
                 }
             },
-        );
-        assert!(out.contains("Infallible"));
-        assert!(out.contains("match * pk") || out.contains("match *pk"));
-        assert!(!out.contains("WHERE"));
+        ));
     }
 
     #[test]
@@ -877,7 +826,7 @@ mod tests {
 
     #[test]
     fn track_last_update_ddl_and_insert() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "commits" },
             quote! {
                 #[track_last_update]
@@ -887,25 +836,12 @@ mod tests {
                     pub data: String,
                 }
             },
-        );
-        // DDL must include the hidden column with its DEFAULT.
-        assert!(
-            out.contains("__last_written_ms INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)")
-        );
-        // INSERT must be a plain INSERT (not INSERT OR IGNORE) …
-        assert!(out.contains("INSERT INTO commits"));
-        assert!(!out.contains("INSERT OR IGNORE"));
-        // … with an ON CONFLICT upsert that applies MAX.
-        assert!(out.contains("ON CONFLICT(id) DO UPDATE SET __last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000)"));
-        // SELECT must NOT include __last_written_ms.
-        assert!(
-            !out.contains("SELECT __last_written_ms") && !out.contains("__last_written_ms FROM")
-        );
+        ));
     }
 
     #[test]
     fn track_last_update_compound_pk() {
-        let out = run(
+        insta::assert_snapshot!(run(
             quote! { "operation_parents" },
             quote! {
                 #[track_last_update]
@@ -917,10 +853,7 @@ mod tests {
                     pub parent_id: OpId,
                 }
             },
-        );
-        assert!(
-            out.contains("ON CONFLICT(operation_id, position) DO UPDATE SET __last_written_ms")
-        );
+        ));
     }
 
     #[test]

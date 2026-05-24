@@ -1,0 +1,45 @@
+---
+source: macros/src/expand_table.rs
+expression: "run(quote! { \"things\" }, quote! { pub struct Thing { pub name: String, } },)"
+---
+pub struct Thing {
+    pub name: String,
+}
+impl ::balsaq::Model for Thing {
+    const CREATE_TABLE: &'static str = ::balsaq::__cf::concatcp!(
+        "CREATE TABLE IF NOT EXISTS things (\n", "    name ",
+        ::balsaq::__cf::str_replace!(< String as ::balsaq::Column > ::SQL_TYPE, "{col}",
+        "name"), ::balsaq::__null_qualifier(< String as ::balsaq::Column > ::NULLABLE),
+        "\n);\n"
+    );
+    const SELECT: &'static str = ::balsaq::__cf::concatcp!(
+        "SELECT ", "name", " FROM things"
+    );
+    const INSERT: &'static str = ::balsaq::__cf::concatcp!(
+        "INSERT INTO things (", "name", ") VALUES (", ":name", ") ON CONFLICT DO NOTHING"
+    );
+    type PrimaryKey<'pk> = &'pk ::std::convert::Infallible;
+    fn from_row(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<Self> {
+        Ok(Self { name: row.get("name")? })
+    }
+    fn write_params(
+        self,
+        stmt: &mut ::rusqlite::CachedStatement<'_>,
+    ) -> ::rusqlite::Result<usize> {
+        let mut params: ::std::vec::Vec<
+            (::std::string::String, &dyn ::rusqlite::types::ToSql),
+        > = ::std::vec::Vec::new();
+        params.push((":name".to_owned(), &self.name as &dyn ::rusqlite::types::ToSql));
+        let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .collect();
+        stmt.execute(params_ref.as_slice())
+    }
+    fn get<'pk>(
+        _conn: &::rusqlite::Connection,
+        pk: Self::PrimaryKey<'pk>,
+    ) -> ::rusqlite::Result<Self> {
+        match *pk {}
+    }
+}

@@ -1,0 +1,11 @@
+---
+source: macros/src/expand_schema.rs
+expression: "run(quote! {}, quote!\n{ mod db { #[table(\"widgets\")] pub struct Widget {} } },)"
+---
+mod db {
+    #[table("widgets")]
+    pub struct Widget {}
+    pub const SCHEMA: &'static str = ::balsaq::__cf::concatcp!(
+        < Widget as ::balsaq::Model > ::CREATE_TABLE
+    );
+}

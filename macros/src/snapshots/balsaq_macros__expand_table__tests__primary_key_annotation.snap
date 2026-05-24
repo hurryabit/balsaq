@@ -1,0 +1,72 @@
+---
+source: macros/src/expand_table.rs
+expression: "run(quote! { \"commit_root_trees\" }, quote!\n{\n    pub struct CommitRootTree\n    {\n        #[primary_key] pub commit_id: CommitId, #[primary_key] pub position:\n        i64, pub label: String,\n    }\n},)"
+---
+pub struct CommitRootTree {
+    pub commit_id: CommitId,
+    pub position: i64,
+    pub label: String,
+}
+impl ::balsaq::Model for CommitRootTree {
+    const CREATE_TABLE: &'static str = ::balsaq::__cf::concatcp!(
+        "CREATE TABLE IF NOT EXISTS commit_root_trees (\n", "    commit_id ",
+        ::balsaq::__cf::str_replace!(< CommitId as ::balsaq::Column > ::SQL_TYPE,
+        "{col}", "commit_id"), ::balsaq::__null_qualifier(< CommitId as ::balsaq::Column
+        > ::NULLABLE), ",\n", "    position ", ::balsaq::__cf::str_replace!(< i64 as
+        ::balsaq::Column > ::SQL_TYPE, "{col}", "position"), ::balsaq::__null_qualifier(<
+        i64 as ::balsaq::Column > ::NULLABLE), ",\n", "    label ",
+        ::balsaq::__cf::str_replace!(< String as ::balsaq::Column > ::SQL_TYPE, "{col}",
+        "label"), ::balsaq::__null_qualifier(< String as ::balsaq::Column > ::NULLABLE),
+        ",\n    PRIMARY KEY (commit_id, position)", "\n);\n"
+    );
+    const SELECT: &'static str = ::balsaq::__cf::concatcp!(
+        "SELECT ", "commit_id", ", ", "position", ", ", "label",
+        " FROM commit_root_trees"
+    );
+    const INSERT: &'static str = ::balsaq::__cf::concatcp!(
+        "INSERT INTO commit_root_trees (", "commit_id", ", ", "position", ", ", "label",
+        ") VALUES (", ":commit_id", ", ", ":position", ", ", ":label",
+        ") ON CONFLICT DO NOTHING"
+    );
+    type PrimaryKey<'pk> = (&'pk CommitId, &'pk i64);
+    fn from_row(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<Self> {
+        Ok(Self {
+            commit_id: row.get("commit_id")?,
+            position: row.get("position")?,
+            label: row.get("label")?,
+        })
+    }
+    fn write_params(
+        self,
+        stmt: &mut ::rusqlite::CachedStatement<'_>,
+    ) -> ::rusqlite::Result<usize> {
+        let mut params: ::std::vec::Vec<
+            (::std::string::String, &dyn ::rusqlite::types::ToSql),
+        > = ::std::vec::Vec::new();
+        params
+            .push((
+                ":commit_id".to_owned(),
+                &self.commit_id as &dyn ::rusqlite::types::ToSql,
+            ));
+        params
+            .push((
+                ":position".to_owned(),
+                &self.position as &dyn ::rusqlite::types::ToSql,
+            ));
+        params.push((":label".to_owned(), &self.label as &dyn ::rusqlite::types::ToSql));
+        let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .collect();
+        stmt.execute(params_ref.as_slice())
+    }
+    fn get<'pk>(
+        conn: &::rusqlite::Connection,
+        pk: Self::PrimaryKey<'pk>,
+    ) -> ::rusqlite::Result<Self> {
+        const SQL: &str = ::balsaq::__cf::concatcp!(
+            CommitRootTree::SELECT, " WHERE commit_id = ?1 AND position = ?2"
+        );
+        conn.prepare_cached(SQL)?.query_row((pk.0, pk.1), Self::from_row)
+    }
+}

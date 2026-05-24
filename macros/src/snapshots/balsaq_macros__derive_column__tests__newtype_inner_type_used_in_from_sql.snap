@@ -1,0 +1,20 @@
+---
+source: macros/src/derive_column.rs
+expression: "run(quote! { pub struct Name(String); })"
+---
+impl ::rusqlite::types::ToSql for Name {
+    fn to_sql(&self) -> ::rusqlite::Result<::rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+impl ::rusqlite::types::FromSql for Name {
+    fn column_result(
+        value: ::rusqlite::types::ValueRef<'_>,
+    ) -> ::rusqlite::types::FromSqlResult<Self> {
+        <String as ::rusqlite::types::FromSql>::column_result(value).map(Self)
+    }
+}
+impl ::balsaq::Column for Name {
+    const SQL_TYPE: &'static str = <String as ::balsaq::Column>::SQL_TYPE;
+    const NULLABLE: bool = <String as ::balsaq::Column>::NULLABLE;
+}

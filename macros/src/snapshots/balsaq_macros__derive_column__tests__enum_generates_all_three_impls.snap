@@ -1,0 +1,28 @@
+---
+source: macros/src/derive_column.rs
+expression: "run(quote! { #[repr(i64)] pub enum Status { Active = 1, Inactive = 2 } })"
+---
+impl ::rusqlite::types::ToSql for Status {
+    fn to_sql(&self) -> ::rusqlite::Result<::rusqlite::types::ToSqlOutput<'_>> {
+        ::std::result::Result::Ok((*self as i64).into())
+    }
+}
+impl ::rusqlite::types::FromSql for Status {
+    fn column_result(
+        value: ::rusqlite::types::ValueRef<'_>,
+    ) -> ::rusqlite::types::FromSqlResult<Self> {
+        match <i64 as ::rusqlite::types::FromSql>::column_result(value)? {
+            1i64 => ::std::result::Result::Ok(Self::Active),
+            2i64 => ::std::result::Result::Ok(Self::Inactive),
+            n => {
+                ::std::result::Result::Err(
+                    ::rusqlite::types::FromSqlError::OutOfRange(n),
+                )
+            }
+        }
+    }
+}
+impl ::balsaq::Column for Status {
+    const SQL_TYPE: &'static str = "INTEGER CHECK ({col} IN (1, 2))";
+    const NULLABLE: bool = false;
+}

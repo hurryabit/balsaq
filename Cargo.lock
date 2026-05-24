@@ -23,6 +23,8 @@ dependencies = [
 name = "balsaq-macros"
 version = "0.1.0"
 dependencies = [
+ "insta",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "syn",

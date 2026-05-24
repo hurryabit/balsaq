@@ -1,0 +1,79 @@
+---
+source: macros/src/expand_table.rs
+expression: "run(quote! { \"operation_parents\" }, quote!\n{\n    #[track_last_update] pub struct OperationParent\n    {\n        #[primary_key] pub operation_id: OpId, #[primary_key] pub position:\n        i64, pub parent_id: OpId,\n    }\n},)"
+---
+pub struct OperationParent {
+    pub operation_id: OpId,
+    pub position: i64,
+    pub parent_id: OpId,
+}
+impl ::balsaq::Model for OperationParent {
+    const CREATE_TABLE: &'static str = ::balsaq::__cf::concatcp!(
+        "CREATE TABLE IF NOT EXISTS operation_parents (\n", "    operation_id ",
+        ::balsaq::__cf::str_replace!(< OpId as ::balsaq::Column > ::SQL_TYPE, "{col}",
+        "operation_id"), ::balsaq::__null_qualifier(< OpId as ::balsaq::Column >
+        ::NULLABLE), ",\n", "    position ", ::balsaq::__cf::str_replace!(< i64 as
+        ::balsaq::Column > ::SQL_TYPE, "{col}", "position"), ::balsaq::__null_qualifier(<
+        i64 as ::balsaq::Column > ::NULLABLE), ",\n", "    parent_id ",
+        ::balsaq::__cf::str_replace!(< OpId as ::balsaq::Column > ::SQL_TYPE, "{col}",
+        "parent_id"), ::balsaq::__null_qualifier(< OpId as ::balsaq::Column >
+        ::NULLABLE),
+        ",\n    __last_written_ms INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)",
+        ",\n    PRIMARY KEY (operation_id, position)", "\n);\n"
+    );
+    const SELECT: &'static str = ::balsaq::__cf::concatcp!(
+        "SELECT ", "operation_id", ", ", "position", ", ", "parent_id",
+        " FROM operation_parents"
+    );
+    const INSERT: &'static str = ::balsaq::__cf::concatcp!(
+        "INSERT INTO operation_parents (", "operation_id", ", ", "position", ", ",
+        "parent_id", ") VALUES (", ":operation_id", ", ", ":position", ", ",
+        ":parent_id",
+        ") ON CONFLICT(operation_id, position) DO UPDATE SET __last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000)"
+    );
+    type PrimaryKey<'pk> = (&'pk OpId, &'pk i64);
+    fn from_row(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<Self> {
+        Ok(Self {
+            operation_id: row.get("operation_id")?,
+            position: row.get("position")?,
+            parent_id: row.get("parent_id")?,
+        })
+    }
+    fn write_params(
+        self,
+        stmt: &mut ::rusqlite::CachedStatement<'_>,
+    ) -> ::rusqlite::Result<usize> {
+        let mut params: ::std::vec::Vec<
+            (::std::string::String, &dyn ::rusqlite::types::ToSql),
+        > = ::std::vec::Vec::new();
+        params
+            .push((
+                ":operation_id".to_owned(),
+                &self.operation_id as &dyn ::rusqlite::types::ToSql,
+            ));
+        params
+            .push((
+                ":position".to_owned(),
+                &self.position as &dyn ::rusqlite::types::ToSql,
+            ));
+        params
+            .push((
+                ":parent_id".to_owned(),
+                &self.parent_id as &dyn ::rusqlite::types::ToSql,
+            ));
+        let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .collect();
+        stmt.execute(params_ref.as_slice())
+    }
+    fn get<'pk>(
+        conn: &::rusqlite::Connection,
+        pk: Self::PrimaryKey<'pk>,
+    ) -> ::rusqlite::Result<Self> {
+        const SQL: &str = ::balsaq::__cf::concatcp!(
+            OperationParent::SELECT, " WHERE operation_id = ?1 AND position = ?2"
+        );
+        conn.prepare_cached(SQL)?.query_row((pk.0, pk.1), Self::from_row)
+    }
+}

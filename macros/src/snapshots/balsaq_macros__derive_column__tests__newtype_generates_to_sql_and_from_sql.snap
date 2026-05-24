@@ -1,0 +1,20 @@
+---
+source: macros/src/derive_column.rs
+expression: "run(quote! { pub struct UserId(i64); })"
+---
+impl ::rusqlite::types::ToSql for UserId {
+    fn to_sql(&self) -> ::rusqlite::Result<::rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+impl ::rusqlite::types::FromSql for UserId {
+    fn column_result(
+        value: ::rusqlite::types::ValueRef<'_>,
+    ) -> ::rusqlite::types::FromSqlResult<Self> {
+        <i64 as ::rusqlite::types::FromSql>::column_result(value).map(Self)
+    }
+}
+impl ::balsaq::Column for UserId {
+    const SQL_TYPE: &'static str = <i64 as ::balsaq::Column>::SQL_TYPE;
+    const NULLABLE: bool = <i64 as ::balsaq::Column>::NULLABLE;
+}

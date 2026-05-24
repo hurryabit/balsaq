@@ -1,0 +1,82 @@
+---
+source: macros/src/expand_group.rs
+expression: "run(quote! { pub struct Sig { pub data: Vec<u8>, pub hash: Vec<u8>, } })"
+---
+pub struct Sig {
+    pub data: Vec<u8>,
+    pub hash: Vec<u8>,
+}
+impl ::balsaq::ColumnGroup for Sig {
+    const DDL: &'static str = ::balsaq::__cf::concatcp!(
+        "    {P}data ", ::balsaq::__cf::str_replace!(< Vec < u8 > as ::balsaq::Column >
+        ::SQL_TYPE, "{col}", "{P}data"), ::balsaq::__nn_placeholder(< Vec < u8 > as
+        ::balsaq::Column > ::NULLABLE), ",\n", "    {P}hash ",
+        ::balsaq::__cf::str_replace!(< Vec < u8 > as ::balsaq::Column > ::SQL_TYPE,
+        "{col}", "{P}hash"), ::balsaq::__nn_placeholder(< Vec < u8 > as ::balsaq::Column
+        > ::NULLABLE)
+    );
+    const COLS: &'static str = "{P}data, {P}hash";
+    const VALS: &'static str = ":{P}data, :{P}hash";
+    const NULLABLE: bool = false;
+    fn cg_read(row: &::rusqlite::Row<'_>, prefix: &str) -> ::rusqlite::Result<Self> {
+        Ok(Self {
+            data: row.get(format!("{prefix}{}", "data").as_str())?,
+            hash: row.get(format!("{prefix}{}", "hash").as_str())?,
+        })
+    }
+    fn cg_write<'a>(
+        &'a self,
+        prefix: &str,
+        out: &mut ::std::vec::Vec<
+            (::std::string::String, &'a dyn ::rusqlite::types::ToSql),
+        >,
+    ) {
+        out.push((
+            format!(":{prefix}{}", "data"),
+            &self.data as &dyn ::rusqlite::types::ToSql,
+        ));
+        out.push((
+            format!(":{prefix}{}", "hash"),
+            &self.hash as &dyn ::rusqlite::types::ToSql,
+        ));
+    }
+    fn cg_read_optional(
+        row: &::rusqlite::Row<'_>,
+        prefix: &str,
+    ) -> ::rusqlite::Result<::std::option::Option<Self>> {
+        if matches!(
+            row.get_ref(format!("{prefix}{}", "data") .as_str()) ?,
+            ::rusqlite::types::ValueRef::Null
+        )
+            && matches!(
+                row.get_ref(format!("{prefix}{}", "hash") .as_str()) ?,
+                ::rusqlite::types::ValueRef::Null
+            )
+        {
+            ::std::result::Result::Ok(::std::option::Option::None)
+        } else {
+            ::std::result::Result::Ok(
+                ::std::option::Option::Some(Self {
+                    data: row.get(format!("{prefix}{}", "data").as_str())?,
+                    hash: row.get(format!("{prefix}{}", "hash").as_str())?,
+                }),
+            )
+        }
+    }
+    fn cg_write_null<'a>(
+        prefix: &str,
+        out: &mut ::std::vec::Vec<
+            (::std::string::String, &'a dyn ::rusqlite::types::ToSql),
+        >,
+    ) {
+        static NULL: ::rusqlite::types::Null = ::rusqlite::types::Null;
+        out.push((
+            format!(":{prefix}{}", "data"),
+            &NULL as &dyn ::rusqlite::types::ToSql,
+        ));
+        out.push((
+            format!(":{prefix}{}", "hash"),
+            &NULL as &dyn ::rusqlite::types::ToSql,
+        ));
+    }
+}

@@ -1,0 +1,29 @@
+---
+source: macros/src/derive_column.rs
+expression: "run(quote! { #[repr(i64)] pub enum Kind { A = 0, B = 1, C = 5 } })"
+---
+impl ::rusqlite::types::ToSql for Kind {
+    fn to_sql(&self) -> ::rusqlite::Result<::rusqlite::types::ToSqlOutput<'_>> {
+        ::std::result::Result::Ok((*self as i64).into())
+    }
+}
+impl ::rusqlite::types::FromSql for Kind {
+    fn column_result(
+        value: ::rusqlite::types::ValueRef<'_>,
+    ) -> ::rusqlite::types::FromSqlResult<Self> {
+        match <i64 as ::rusqlite::types::FromSql>::column_result(value)? {
+            0i64 => ::std::result::Result::Ok(Self::A),
+            1i64 => ::std::result::Result::Ok(Self::B),
+            5i64 => ::std::result::Result::Ok(Self::C),
+            n => {
+                ::std::result::Result::Err(
+                    ::rusqlite::types::FromSqlError::OutOfRange(n),
+                )
+            }
+        }
+    }
+}
+impl ::balsaq::Column for Kind {
+    const SQL_TYPE: &'static str = "INTEGER CHECK ({col} IN (0, 1, 5))";
+    const NULLABLE: bool = false;
+}

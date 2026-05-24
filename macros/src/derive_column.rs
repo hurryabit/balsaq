@@ -181,7 +181,9 @@ mod tests {
     use quote::quote;
 
     fn run(input: TokenStream) -> String {
-        expand(input).unwrap().to_string()
+        let tokens = expand(input).unwrap();
+        let file: syn::File = syn::parse2(tokens).unwrap();
+        prettyplease::unparse(&file)
     }
 
     fn run_err(input: TokenStream) -> String {
@@ -192,18 +194,12 @@ mod tests {
 
     #[test]
     fn newtype_generates_to_sql_and_from_sql() {
-        let out = run(quote! { pub struct UserId(i64); });
-        assert!(out.contains("ToSql"));
-        assert!(out.contains("FromSql"));
-        assert!(out.contains("self . 0 . to_sql") || out.contains("self.0.to_sql"));
-        assert!(out.contains("i64"));
-        assert!(out.contains("map (Self)") || out.contains("map(Self)"));
+        insta::assert_snapshot!(run(quote! { pub struct UserId(i64); }));
     }
 
     #[test]
     fn newtype_inner_type_used_in_from_sql() {
-        let out = run(quote! { pub struct Name(String); });
-        assert!(out.contains("String"));
+        insta::assert_snapshot!(run(quote! { pub struct Name(String); }));
     }
 
     #[test]
@@ -222,38 +218,26 @@ mod tests {
 
     #[test]
     fn enum_generates_all_three_impls() {
-        let out = run(quote! {
+        insta::assert_snapshot!(run(quote! {
             #[repr(i64)]
             pub enum Status { Active = 1, Inactive = 2 }
-        });
-        assert!(out.contains("ToSql"));
-        assert!(out.contains("FromSql"));
-        assert!(out.contains("Column"));
-        assert!(out.contains("* self as i64") || out.contains("*self as i64"));
-        assert!(out.contains("OutOfRange"));
+        }));
     }
 
     #[test]
     fn enum_check_constraint_contains_discriminants() {
-        let out = run(quote! {
+        insta::assert_snapshot!(run(quote! {
             #[repr(i64)]
             pub enum Kind { A = 0, B = 1, C = 5 }
-        });
-        assert!(out.contains("INTEGER CHECK"));
-        assert!(out.contains("0"));
-        assert!(out.contains("1"));
-        assert!(out.contains("5"));
-        assert!(out.contains("{col}"));
+        }));
     }
 
     #[test]
     fn enum_implicit_discriminants() {
-        let out = run(quote! {
+        insta::assert_snapshot!(run(quote! {
             #[repr(i64)]
             pub enum Tri { X, Y, Z }
-        });
-        // Discriminants should be 0, 1, 2
-        assert!(out.contains("0") && out.contains("1") && out.contains("2"));
+        }));
     }
 
     #[test]

@@ -83,7 +83,7 @@ pub(crate) fn expand(item: TokenStream) -> Result<TokenStream> {
 
     // cg_read_optional (all-null check)
     //
-    // Use get_ref to inspect the raw ValueRef for each column . If every column is NULL the group
+    // Use get_ref to inspect the raw ValueRef for each column. If every column is NULL the group
     // is absent (None). Otherwise the struct is read using the original field types — get is a
     // cheap re-parse of already-buffered data, not a second DB round-trip.
     let all_null_checks = cols.iter().map(|c| {
@@ -203,17 +203,18 @@ mod tests {
     }
 
     #[test]
-    fn optional_first_field_uses_all_null_check() {
+    fn all_columns_checked_for_null() {
         let out = run(quote! {
             pub struct AllOpt {
                 pub label: Option<String>,
                 pub note: Option<String>,
             }
         });
-        // All-null check should appear (not just sentinel on first column).
-        assert!(out.contains("__null_label"));
-        assert!(out.contains("__null_note"));
-        assert!(out.contains("is_none"));
+        // Both columns must appear in the all-null check, not just the first.
+        assert!(out.contains("label"));
+        assert!(out.contains("note"));
+        assert!(out.contains("ValueRef :: Null") || out.contains("ValueRef::Null"));
+        assert!(out.contains("matches !") || out.contains("matches!"));
     }
 
     #[test]

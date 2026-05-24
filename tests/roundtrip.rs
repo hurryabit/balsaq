@@ -283,7 +283,7 @@ fn widget_constants() {
     assert_eq!(Widget::SELECT, "SELECT id, name FROM widgets");
     assert_eq!(
         Widget::INSERT,
-        "INSERT OR IGNORE INTO widgets (id, name) VALUES (:id, :name)"
+        "INSERT INTO widgets (id, name) VALUES (:id, :name) ON CONFLICT DO NOTHING"
     );
     assert!(Widget::CREATE_TABLE.contains("CREATE TABLE IF NOT EXISTS widgets"));
     assert!(Widget::CREATE_TABLE.contains("id BLOB NOT NULL"));
@@ -400,7 +400,7 @@ fn widget_roundtrip() {
 }
 
 #[test]
-fn widget_insert_or_ignore() {
+fn widget_insert_do_nothing() {
     let conn = setup();
     insert(
         &conn,

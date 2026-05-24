@@ -1,0 +1,12 @@
+---
+source: tests/roundtrip.rs
+expression: "PartialThing::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS partial_things (
+    id INTEGER NOT NULL,
+    point_x INTEGER NOT NULL,
+    point_label TEXT,
+    opt_point_x INTEGER,
+    opt_point_label TEXT,
+    PRIMARY KEY (id)
+);

@@ -1,0 +1,13 @@
+---
+source: tests/roundtrip.rs
+expression: "catalog::SCHEMA"
+---
+CREATE TABLE IF NOT EXISTS alpha (
+    id INTEGER NOT NULL,
+    PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS beta (
+    id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    PRIMARY KEY (id)
+);

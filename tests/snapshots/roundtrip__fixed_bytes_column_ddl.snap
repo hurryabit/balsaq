@@ -1,0 +1,9 @@
+---
+source: tests/roundtrip.rs
+expression: "Fingerprint::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS fingerprints (
+    id INTEGER NOT NULL,
+    digest BLOB NOT NULL,
+    PRIMARY KEY (id)
+);

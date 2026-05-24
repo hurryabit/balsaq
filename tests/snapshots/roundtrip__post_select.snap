@@ -1,0 +1,5 @@
+---
+source: tests/roundtrip.rs
+expression: "Post::SELECT"
+---
+SELECT id, title, author_name, author_karma, sig_data, sig_hash FROM posts

@@ -1,0 +1,10 @@
+---
+source: tests/roundtrip.rs
+expression: "Event::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER NOT NULL,
+    description TEXT,
+    payload BLOB,
+    PRIMARY KEY (id)
+);

@@ -1,0 +1,5 @@
+---
+source: tests/roundtrip.rs
+expression: "TrackedItem::SELECT"
+---
+SELECT id, payload FROM tracked_items

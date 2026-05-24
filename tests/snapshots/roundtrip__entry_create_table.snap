@@ -1,0 +1,10 @@
+---
+source: tests/roundtrip.rs
+expression: "Entry::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS entries (
+    id INTEGER NOT NULL,
+    value_number INTEGER,
+    value_text TEXT,
+    PRIMARY KEY (id)
+);

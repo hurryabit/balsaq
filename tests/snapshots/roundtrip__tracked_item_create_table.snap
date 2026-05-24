@@ -1,0 +1,10 @@
+---
+source: tests/roundtrip.rs
+expression: "TrackedItem::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS tracked_items (
+    id INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    __last_written_ms INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    PRIMARY KEY (id)
+);

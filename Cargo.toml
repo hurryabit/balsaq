@@ -16,7 +16,7 @@ categories = ["database", "development-tools::procedural-macro-implementations"]
 [dependencies]
 balsaq-macros = { path = "macros" }
 const_format = "0.2.36"
-rusqlite = "0.39"
+rusqlite = ">=0.37, <0.40"
 
 [dev-dependencies]
 insta = "1"

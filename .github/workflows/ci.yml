@@ -14,10 +14,16 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rusqlite-version: ["0.37", "0.38", "0.39"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: rusqlite-${{ matrix.rusqlite-version }}
+      - run: cargo add rusqlite@~${{ matrix.rusqlite-version }}
       - run: cargo test
 
   clippy:

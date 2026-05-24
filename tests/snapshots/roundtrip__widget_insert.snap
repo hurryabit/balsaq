@@ -1,0 +1,5 @@
+---
+source: tests/roundtrip.rs
+expression: "Widget::INSERT"
+---
+INSERT INTO widgets (id, name) VALUES (:id, :name) ON CONFLICT DO NOTHING

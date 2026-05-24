@@ -1,0 +1,15 @@
+---
+source: tests/roundtrip.rs
+expression: "Post::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS posts (
+    id BLOB NOT NULL,
+    title TEXT NOT NULL,
+    author_name TEXT NOT NULL,
+    author_karma INTEGER NOT NULL,
+    sig_data BLOB,
+    sig_hash BLOB,
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_posts_title ON posts (title);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_id_title ON posts (id, title);

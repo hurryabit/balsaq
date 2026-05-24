@@ -1,0 +1,10 @@
+---
+source: tests/roundtrip.rs
+expression: "Widget::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS widgets (
+    id BLOB NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_widgets_name ON widgets (name);

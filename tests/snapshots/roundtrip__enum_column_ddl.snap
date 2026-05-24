@@ -1,0 +1,11 @@
+---
+source: tests/roundtrip.rs
+expression: "Account::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER NOT NULL,
+    status INTEGER CHECK (status IN (1, 2, 3)) NOT NULL,
+    flags INTEGER CHECK (flags IN (0, 1)),
+    prev_status INTEGER CHECK (prev_status IN (1, 2, 3)),
+    PRIMARY KEY (id)
+);

@@ -1,4 +1,5 @@
 use balsaq::{Column, Model, group, insert, schema, table};
+use insta::assert_snapshot;
 use rusqlite::{
     Connection,
     types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef},
@@ -239,7 +240,24 @@ pub struct CommitRootTree {
     pub conflict_label: String,
 }
 
+// ── track_last_update table ───────────────────────────────────────────────────
+
+#[table("tracked_items")]
+#[track_last_update]
+pub struct TrackedItem {
+    #[primary_key]
+    pub id: i64,
+    pub payload: String,
+}
+
 // ── DB setup ──────────────────────────────────────────────────────────────────
+
+fn assert_valid_ddl(sql: &str) {
+    Connection::open_in_memory()
+        .unwrap()
+        .execute_batch(sql)
+        .unwrap();
+}
 
 fn setup() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
@@ -254,6 +272,7 @@ fn setup() -> Connection {
             PartialThing::CREATE_TABLE,
             Fingerprint::CREATE_TABLE,
             CommitRootTree::CREATE_TABLE,
+            TrackedItem::CREATE_TABLE,
         ]
         .concat(),
     )
@@ -265,85 +284,46 @@ fn setup() -> Connection {
 
 #[test]
 fn schema_constant_concatenates_create_tables() {
-    assert!(catalog::SCHEMA.contains("CREATE TABLE IF NOT EXISTS alpha"));
-    assert!(catalog::SCHEMA.contains("CREATE TABLE IF NOT EXISTS beta"));
-    assert_eq!(
-        catalog::SCHEMA,
-        [catalog::Alpha::CREATE_TABLE, catalog::Beta::CREATE_TABLE].concat(),
-    );
-
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    conn.execute_batch(catalog::SCHEMA).unwrap();
+    assert_snapshot!(catalog::SCHEMA);
+    assert_valid_ddl(catalog::SCHEMA);
 }
 
 // ── SQL constant tests ────────────────────────────────────────────────────────
 
 #[test]
 fn widget_constants() {
-    assert_eq!(Widget::SELECT, "SELECT id, name FROM widgets");
-    assert_eq!(
-        Widget::INSERT,
-        "INSERT INTO widgets (id, name) VALUES (:id, :name) ON CONFLICT DO NOTHING"
-    );
-    assert!(Widget::CREATE_TABLE.contains("CREATE TABLE IF NOT EXISTS widgets"));
-    assert!(Widget::CREATE_TABLE.contains("id BLOB NOT NULL"));
-    assert!(Widget::CREATE_TABLE.contains("PRIMARY KEY (id)"));
-    assert!(Widget::CREATE_TABLE.contains("name TEXT NOT NULL"));
-    assert!(
-        Widget::CREATE_TABLE
-            .contains("CREATE INDEX IF NOT EXISTS idx_widgets_name ON widgets (name)")
-    );
+    assert_snapshot!("widget_select", Widget::SELECT);
+    assert_snapshot!("widget_insert", Widget::INSERT);
+    assert_snapshot!("widget_create_table", Widget::CREATE_TABLE);
+    assert_valid_ddl(Widget::CREATE_TABLE);
 }
 
 #[test]
 fn post_schema_constants() {
-    assert!(Post::CREATE_TABLE.contains("title TEXT NOT NULL"));
-    assert!(Post::CREATE_TABLE.contains("author_name TEXT NOT NULL"));
-    assert!(Post::CREATE_TABLE.contains("author_karma INTEGER NOT NULL"));
-    // Optional group: columns are nullable (no NOT NULL).
-    assert!(Post::CREATE_TABLE.contains("sig_data BLOB"));
-    assert!(!Post::CREATE_TABLE.contains("sig_data BLOB NOT NULL"));
-    assert!(Post::CREATE_TABLE.contains("sig_hash BLOB"));
-    assert!(!Post::CREATE_TABLE.contains("sig_hash BLOB NOT NULL"));
-
-    assert!(Post::SELECT.contains("author_name"));
-    assert!(Post::SELECT.contains("author_karma"));
-    assert!(Post::SELECT.contains("sig_data"));
-    assert!(Post::SELECT.contains("sig_hash"));
-
-    assert!(Post::INSERT.contains(":author_name"));
-    assert!(Post::INSERT.contains(":sig_data"));
-    assert!(
-        Post::CREATE_TABLE.contains("CREATE INDEX IF NOT EXISTS idx_posts_title ON posts (title)")
-    );
-    assert!(
-        Post::CREATE_TABLE
-            .contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_id_title ON posts (id, title)")
-    );
+    assert_snapshot!("post_select", Post::SELECT);
+    assert_snapshot!("post_insert", Post::INSERT);
+    assert_snapshot!("post_create_table", Post::CREATE_TABLE);
+    assert_valid_ddl(Post::CREATE_TABLE);
 }
 
 #[test]
 fn commit_root_tree_compound_pk() {
-    assert!(CommitRootTree::CREATE_TABLE.contains("PRIMARY KEY (commit_id, position, is_remove)"));
-    assert_eq!(
-        CommitRootTree::SELECT,
-        "SELECT commit_id, position, is_remove, tree_id, conflict_label FROM commit_root_trees"
+    assert_snapshot!("commit_root_tree_select", CommitRootTree::SELECT);
+    assert_snapshot!(
+        "commit_root_tree_create_table",
+        CommitRootTree::CREATE_TABLE
     );
+    assert_valid_ddl(CommitRootTree::CREATE_TABLE);
 }
 
 // ── Entry (via adapter) tests ─────────────────────────────────────────────────
 
 #[test]
 fn entry_schema_uses_raw_type_columns() {
-    // Both columns come from ValueRaw; they are nullable because Option<_>.
-    assert!(Entry::CREATE_TABLE.contains("value_number INTEGER"));
-    assert!(!Entry::CREATE_TABLE.contains("value_number INTEGER NOT NULL"));
-    assert!(Entry::CREATE_TABLE.contains("value_text TEXT"));
-    assert!(!Entry::CREATE_TABLE.contains("value_text TEXT NOT NULL"));
-    assert!(Entry::SELECT.contains("value_number"));
-    assert!(Entry::SELECT.contains("value_text"));
-    assert!(Entry::INSERT.contains(":value_number"));
-    assert!(Entry::INSERT.contains(":value_text"));
+    assert_snapshot!("entry_select", Entry::SELECT);
+    assert_snapshot!("entry_insert", Entry::INSERT);
+    assert_snapshot!("entry_create_table", Entry::CREATE_TABLE);
+    assert_valid_ddl(Entry::CREATE_TABLE);
 }
 
 #[test]
@@ -495,17 +475,8 @@ fn post_optional_sig_none_to_some_distinction() {
 
 #[test]
 fn enum_column_ddl() {
-    // Required enum column: CHECK constraint with NOT NULL.
-    assert!(Account::CREATE_TABLE.contains("status INTEGER CHECK (status IN (1, 2, 3)) NOT NULL"));
-    // Optional enum column: CHECK constraint, no NOT NULL.
-    assert!(Account::CREATE_TABLE.contains("prev_status INTEGER CHECK (prev_status IN (1, 2, 3))"));
-    assert!(
-        !Account::CREATE_TABLE
-            .contains("prev_status INTEGER CHECK (prev_status IN (1, 2, 3)) NOT NULL")
-    );
-    // Optional bool column: CHECK constraint, no NOT NULL.
-    assert!(Account::CREATE_TABLE.contains("flags INTEGER CHECK (flags IN (0, 1))"));
-    assert!(!Account::CREATE_TABLE.contains("flags INTEGER CHECK (flags IN (0, 1)) NOT NULL"));
+    assert_snapshot!(Account::CREATE_TABLE);
+    assert_valid_ddl(Account::CREATE_TABLE);
 }
 
 #[test]
@@ -545,11 +516,8 @@ fn enum_column_roundtrip() {
 
 #[test]
 fn bool_column_has_check_constraint() {
-    // Required bool: CHECK constraint AND NOT NULL.
-    assert!(
-        CommitRootTree::CREATE_TABLE
-            .contains("is_remove INTEGER CHECK (is_remove IN (0, 1)) NOT NULL")
-    );
+    assert_snapshot!(CommitRootTree::CREATE_TABLE);
+    assert_valid_ddl(CommitRootTree::CREATE_TABLE);
 }
 
 // ── derive(Column) newtype tests ──────────────────────────────────────────────
@@ -582,16 +550,8 @@ fn newtype_column_sql_type_inherited() {
 
 #[test]
 fn group_nullability_ddl() {
-    // Required group: non-optional field is NOT NULL, optional field is nullable.
-    assert!(PartialThing::CREATE_TABLE.contains("point_x INTEGER NOT NULL"));
-    assert!(PartialThing::CREATE_TABLE.contains("point_label TEXT"));
-    assert!(!PartialThing::CREATE_TABLE.contains("point_label TEXT NOT NULL"));
-
-    // Optional group: all fields are nullable regardless of their own type.
-    assert!(PartialThing::CREATE_TABLE.contains("opt_point_x INTEGER"));
-    assert!(!PartialThing::CREATE_TABLE.contains("opt_point_x INTEGER NOT NULL"));
-    assert!(PartialThing::CREATE_TABLE.contains("opt_point_label TEXT"));
-    assert!(!PartialThing::CREATE_TABLE.contains("opt_point_label TEXT NOT NULL"));
+    assert_snapshot!(PartialThing::CREATE_TABLE);
+    assert_valid_ddl(PartialThing::CREATE_TABLE);
 }
 
 #[test]
@@ -643,11 +603,8 @@ fn group_nullability_roundtrip() {
 
 #[test]
 fn nullable_column_ddl() {
-    assert!(Event::CREATE_TABLE.contains("id INTEGER NOT NULL"));
-    assert!(Event::CREATE_TABLE.contains("description TEXT"));
-    assert!(!Event::CREATE_TABLE.contains("description TEXT NOT NULL"));
-    assert!(Event::CREATE_TABLE.contains("payload BLOB"));
-    assert!(!Event::CREATE_TABLE.contains("payload BLOB NOT NULL"));
+    assert_snapshot!(Event::CREATE_TABLE);
+    assert_valid_ddl(Event::CREATE_TABLE);
 }
 
 #[test]
@@ -744,7 +701,8 @@ fn get_by_compound_pk() {
 
 #[test]
 fn fixed_bytes_column_ddl() {
-    assert!(Fingerprint::CREATE_TABLE.contains("digest BLOB NOT NULL"));
+    assert_snapshot!(Fingerprint::CREATE_TABLE);
+    assert_valid_ddl(Fingerprint::CREATE_TABLE);
 }
 
 #[test]
@@ -803,4 +761,51 @@ fn commit_root_tree_roundtrip() {
     assert_eq!(got[1].tree_id, BlobId::new(11));
     assert!(got[1].is_remove);
     assert_eq!(got[1].conflict_label, "base");
+}
+
+// ── #[track_last_update] tests ────────────────────────────────────────────────
+
+#[test]
+fn track_last_update_constants() {
+    assert_snapshot!("tracked_item_select", TrackedItem::SELECT);
+    assert_snapshot!("tracked_item_insert", TrackedItem::INSERT);
+    assert_snapshot!("tracked_item_create_table", TrackedItem::CREATE_TABLE);
+    assert_valid_ddl(TrackedItem::CREATE_TABLE);
+}
+
+#[test]
+fn track_last_update_roundtrip() {
+    let conn = setup();
+
+    insert(
+        &conn,
+        TrackedItem {
+            id: 1,
+            payload: "hello".to_owned(),
+        },
+    )
+    .unwrap();
+
+    // A second insert with the same PK must not error — it upserts __last_written_ms.
+    insert(
+        &conn,
+        TrackedItem {
+            id: 1,
+            payload: "hello".to_owned(),
+        },
+    )
+    .unwrap();
+
+    // The row is still readable and __last_written_ms is set (non-zero).
+    let got = TrackedItem::get(&conn, &1i64).unwrap();
+    assert_eq!(got.payload, "hello");
+
+    let ms: i64 = conn
+        .query_row(
+            "SELECT __last_written_ms FROM tracked_items WHERE id = ?1",
+            [1i64],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(ms > 0);
 }

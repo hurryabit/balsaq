@@ -1,0 +1,5 @@
+---
+source: tests/roundtrip.rs
+expression: "CommitRootTree::SELECT"
+---
+SELECT commit_id, position, is_remove, tree_id, conflict_label FROM commit_root_trees

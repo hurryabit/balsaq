@@ -9,4 +9,4 @@ CREATE TABLE IF NOT EXISTS commit_root_trees (
     tree_id BLOB NOT NULL,
     conflict_label TEXT NOT NULL,
     PRIMARY KEY (commit_id, position, is_remove)
-);
+) WITHOUT ROWID;

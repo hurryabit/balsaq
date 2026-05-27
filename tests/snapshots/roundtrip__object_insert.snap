@@ -1,0 +1,5 @@
+---
+source: tests/roundtrip.rs
+expression: "Object::INSERT"
+---
+INSERT INTO objects (hash, data) VALUES (:hash, :data) ON CONFLICT(hash) DO UPDATE SET row_id = row_id RETURNING row_id

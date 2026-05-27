@@ -6,5 +6,5 @@ CREATE TABLE IF NOT EXISTS widgets (
     id BLOB NOT NULL,
     name TEXT NOT NULL,
     PRIMARY KEY (id)
-);
+) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS idx_widgets_name ON widgets (name);

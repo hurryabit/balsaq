@@ -1,0 +1,5 @@
+---
+source: tests/roundtrip.rs
+expression: "VersionedObject::SELECT"
+---
+SELECT hash, data FROM versioned_objects

@@ -9,4 +9,4 @@ CREATE TABLE IF NOT EXISTS partial_things (
     opt_point_x INTEGER,
     opt_point_label TEXT,
     PRIMARY KEY (id)
-);
+) WITHOUT ROWID;

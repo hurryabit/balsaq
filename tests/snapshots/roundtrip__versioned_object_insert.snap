@@ -1,0 +1,5 @@
+---
+source: tests/roundtrip.rs
+expression: "VersionedObject::INSERT"
+---
+INSERT INTO versioned_objects (hash, data) VALUES (:hash, :data) ON CONFLICT(hash) DO UPDATE SET __last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000) RETURNING row_id

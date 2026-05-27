@@ -6,7 +6,7 @@ pub use rusqlite;
 pub use const_format as __cf;
 
 use rusqlite::types::{FromSql, ToSql};
-use rusqlite::{CachedStatement, Connection, Row};
+use rusqlite::{Connection, Row};
 
 /// A type that maps to a single SQL column. Implementing this trait lets the type be used as a
 /// plain (unannotated) field in a `#[table]` or `#[group]` struct — the macro reads `SQL_TYPE` to
@@ -91,15 +91,20 @@ pub trait Model: Sized {
     /// `&'pk std::convert::Infallible`, making `get` uncallable.
     type PrimaryKey<'pk>;
 
+    /// The type returned by `insert`. For `auto_primary_key` tables this is the generated
+    /// `FooRowId` newtype; for all other tables it is `()`.
+    type InsertId;
+
     fn from_row(row: &Row<'_>) -> rusqlite::Result<Self>;
-    fn write_params(self, stmt: &mut CachedStatement<'_>) -> rusqlite::Result<usize>;
+
+    #[doc(hidden)]
+    fn do_insert(self, conn: &Connection) -> rusqlite::Result<Self::InsertId>;
 
     fn get<'pk>(conn: &Connection, pk: Self::PrimaryKey<'pk>) -> rusqlite::Result<Self>;
 }
 
-pub fn insert<T: Model>(conn: &Connection, value: T) -> rusqlite::Result<()> {
-    value.write_params(&mut conn.prepare_cached(T::INSERT)?)?;
-    Ok(())
+pub fn insert<T: Model>(conn: &Connection, value: T) -> rusqlite::Result<T::InsertId> {
+    value.do_insert(conn)
 }
 
 pub fn get_all<T: Model, P: rusqlite::Params>(
@@ -113,7 +118,7 @@ pub fn get_all<T: Model, P: rusqlite::Params>(
 }
 
 pub trait ConnectionExt {
-    fn insert<T: Model>(&self, value: T) -> rusqlite::Result<()>;
+    fn insert<T: Model>(&self, value: T) -> rusqlite::Result<T::InsertId>;
     fn get_all<T: Model, P: rusqlite::Params>(
         &self,
         sql: &'static str,
@@ -123,7 +128,7 @@ pub trait ConnectionExt {
 }
 
 impl ConnectionExt for Connection {
-    fn insert<T: Model>(&self, value: T) -> rusqlite::Result<()> {
+    fn insert<T: Model>(&self, value: T) -> rusqlite::Result<T::InsertId> {
         crate::insert(self, value)
     }
 

@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS accounts (
     flags INTEGER CHECK (flags IN (0, 1)),
     prev_status INTEGER CHECK (prev_status IN (1, 2, 3)),
     PRIMARY KEY (id)
-);
+) WITHOUT ROWID;

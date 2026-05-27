@@ -10,6 +10,6 @@ CREATE TABLE IF NOT EXISTS posts (
     sig_data BLOB,
     sig_hash BLOB,
     PRIMARY KEY (id)
-);
+) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS idx_posts_title ON posts (title);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_id_title ON posts (id, title);

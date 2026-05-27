@@ -7,4 +7,4 @@ CREATE TABLE IF NOT EXISTS events (
     description TEXT,
     payload BLOB,
     PRIMARY KEY (id)
-);
+) WITHOUT ROWID;

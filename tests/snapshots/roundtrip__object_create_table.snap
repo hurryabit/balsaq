@@ -1,0 +1,9 @@
+---
+source: tests/roundtrip.rs
+expression: "Object::CREATE_TABLE"
+---
+CREATE TABLE IF NOT EXISTS objects (
+    row_id INTEGER PRIMARY KEY,
+    hash BLOB NOT NULL UNIQUE,
+    data BLOB NOT NULL
+);

@@ -35,12 +35,41 @@ impl Parse for FieldGroupArgs {
 
 struct TableArgs {
     table_name: LitStr,
+    auto_primary_key: bool,
+    track_last_update: bool,
 }
 
 impl Parse for TableArgs {
     fn parse(input: ParseStream) -> Result<Self> {
         let table_name: LitStr = input.parse()?;
-        Ok(Self { table_name })
+        let mut auto_primary_key = false;
+        let mut track_last_update = false;
+
+        while input.peek(Token![,]) {
+            let _: Token![,] = input.parse()?;
+            if input.is_empty() {
+                break; // tolerate trailing comma
+            }
+            let flag: syn::Ident = input.parse()?;
+            if flag == "auto_primary_key" {
+                auto_primary_key = true;
+            } else if flag == "track_last_update" {
+                track_last_update = true;
+            } else {
+                return Err(Error::new(
+                    flag.span(),
+                    format!(
+                        "unknown `#[table]` flag `{flag}`; expected `auto_primary_key` or `track_last_update`"
+                    ),
+                ));
+            }
+        }
+
+        Ok(Self {
+            table_name,
+            auto_primary_key,
+            track_last_update,
+        })
     }
 }
 
@@ -90,8 +119,12 @@ impl Parse for IndexArgs {
 
 #[allow(clippy::large_enum_variant)]
 enum FieldKind {
-    /// An unannotated field or `#[primary_key]` — type implements `Column`.
-    Column { primary_key: bool, ty: syn::Type },
+    /// An unannotated, `#[primary_key]`, or `#[unique]` field — type implements `Column`.
+    Column {
+        primary_key: bool,
+        unique: bool,
+        ty: syn::Type,
+    },
     /// A `#[group]` field — type implements `ColumnGroup`. Covers both required (`Sig`) and
     /// optional (`Option<Sig>`) groups; `ColumnGroup::NULLABLE` drives the `{NN}` substitution.
     ColumnGroup { ty: syn::Type, prefix: String },
@@ -111,27 +144,23 @@ struct FieldInfo {
 }
 
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
-    let TableArgs { table_name } = syn::parse2::<TableArgs>(attr)?;
+    let TableArgs {
+        table_name,
+        auto_primary_key,
+        track_last_update,
+    } = syn::parse2::<TableArgs>(attr)?;
     let table = table_name.value();
 
     let mut item_struct: ItemStruct = syn::parse2(item)?;
     let struct_name = item_struct.ident.clone();
+    let vis = item_struct.vis.clone();
 
-    // Collect and strip #[index] and #[track_last_update] attrs from the struct before re-emitting it.
+    // Collect and strip #[index] attrs from the struct before re-emitting it.
     let mut indices: Vec<IndexArgs> = Vec::new();
-    let mut track_last_update = false;
     let mut kept_attrs = Vec::new();
     for attr in item_struct.attrs.drain(..) {
         if attr.path().is_ident("index") {
             indices.push(attr.parse_args::<IndexArgs>()?);
-        } else if attr.path().is_ident("track_last_update") {
-            if !matches!(attr.meta, Meta::Path(_)) {
-                return Err(Error::new(
-                    attr.span(),
-                    "#[track_last_update] takes no arguments",
-                ));
-            }
-            track_last_update = true;
         } else {
             kept_attrs.push(attr);
         }
@@ -156,12 +185,19 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
             .attrs
             .iter()
             .position(|a| a.path().is_ident("primary_key"));
+        let unique_pos = field.attrs.iter().position(|a| a.path().is_ident("unique"));
 
         let kind = if let Some(group_pos) = group_pos {
             if let Some(pk_pos) = pk_pos {
                 return Err(Error::new(
                     field.attrs[pk_pos].span(),
                     "a field cannot be both #[group] and #[primary_key]",
+                ));
+            }
+            if let Some(unique_pos) = unique_pos {
+                return Err(Error::new(
+                    field.attrs[unique_pos].span(),
+                    "a field cannot be both #[group] and #[unique]",
                 ));
             }
             let group_attr = field.attrs.remove(group_pos);
@@ -184,14 +220,29 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
                 },
             }
         } else if let Some(pk_pos) = pk_pos {
+            if let Some(unique_pos) = unique_pos {
+                return Err(Error::new(
+                    field.attrs[unique_pos].span(),
+                    "a field cannot be both #[primary_key] and #[unique]",
+                ));
+            }
             field.attrs.remove(pk_pos);
             FieldKind::Column {
                 primary_key: true,
+                unique: false,
+                ty: field.ty.clone(),
+            }
+        } else if let Some(unique_pos) = unique_pos {
+            field.attrs.remove(unique_pos);
+            FieldKind::Column {
+                primary_key: false,
+                unique: true,
                 ty: field.ty.clone(),
             }
         } else {
             FieldKind::Column {
                 primary_key: false,
+                unique: false,
                 ty: field.ty.clone(),
             }
         };
@@ -199,7 +250,63 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         fields.push(FieldInfo { ident, kind });
     }
 
-    // Validate #[index] column names
+    // Collect PK and unique fields.
+    let pk_field_info: Vec<(&syn::Ident, &syn::Type)> = fields
+        .iter()
+        .filter_map(|f| {
+            if let FieldKind::Column {
+                primary_key: true,
+                ty,
+                ..
+            } = &f.kind
+            {
+                Some((&f.ident, ty))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let unique_field_info: Vec<(&syn::Ident, &syn::Type)> = fields
+        .iter()
+        .filter_map(|f| {
+            if let FieldKind::Column {
+                unique: true, ty, ..
+            } = &f.kind
+            {
+                Some((&f.ident, ty))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Validate constraint rules.
+    if auto_primary_key && !pk_field_info.is_empty() {
+        return Err(Error::new(
+            struct_name.span(),
+            "`auto_primary_key` and `#[primary_key]` cannot both be used on the same table",
+        ));
+    }
+    if !unique_field_info.is_empty() && !auto_primary_key {
+        return Err(Error::new(
+            unique_field_info[0].0.span(),
+            "`#[unique]` requires `auto_primary_key` on the table",
+        ));
+    }
+    if track_last_update {
+        let valid =
+            !pk_field_info.is_empty() || (auto_primary_key && !unique_field_info.is_empty());
+        if !valid {
+            return Err(Error::new(
+                struct_name.span(),
+                "`track_last_update` requires either a `#[primary_key]` field \
+                 or `auto_primary_key` with at least one `#[unique]` field",
+            ));
+        }
+    }
+
+    // Validate #[index] column names.
     let plain_field_names: std::collections::HashSet<String> = fields
         .iter()
         .filter_map(|f| {
@@ -231,17 +338,23 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
     // Schema constants: We always use concatcp! so that str_replace! invocations (needed for group
     // DDL/COLS/VALS) compose cleanly with Column::SQL_TYPE references.
 
-    // CREATE TABLE DDL pieces
+    // CREATE TABLE DDL pieces.
     let mut ddl_args: Vec<TokenStream> = Vec::new();
     let create_prefix = format!("CREATE TABLE IF NOT EXISTS {table} (\n");
     ddl_args.push(quote! { #create_prefix });
 
+    // For auto_primary_key, emit row_id as the first column.
+    if auto_primary_key {
+        ddl_args.push(quote! { "    row_id INTEGER PRIMARY KEY" });
+    }
+
     for (i, f) in fields.iter().enumerate() {
-        if i > 0 {
+        // Comma separator: always needed after row_id (if auto_primary_key), or between fields.
+        if i > 0 || auto_primary_key {
             ddl_args.push(quote! { ",\n" });
         }
         match &f.kind {
-            FieldKind::Column { ty, .. } => {
+            FieldKind::Column { ty, unique, .. } => {
                 let col_name = f.ident.to_string();
                 let col_prefix = format!("    {col_name} ");
                 ddl_args.push(quote! { #col_prefix });
@@ -257,6 +370,9 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
                 ddl_args.push(quote! {
                     ::balsaq::__null_qualifier(<#ty as ::balsaq::Column>::NULLABLE)
                 });
+                if *unique {
+                    ddl_args.push(quote! { " UNIQUE" });
+                }
             }
             FieldKind::ColumnGroup { ty, prefix } => {
                 // ColumnGroup::NULLABLE drives {NN}: false → " NOT NULL", true → "".
@@ -279,35 +395,15 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         }
     }
 
-    // Collect PK fields.
-    let pk_field_info: Vec<(&syn::Ident, &syn::Type)> = fields
-        .iter()
-        .filter_map(|f| {
-            if let FieldKind::Column {
-                primary_key: true,
-                ty,
-            } = &f.kind
-            {
-                Some((&f.ident, ty))
-            } else {
-                None
-            }
-        })
-        .collect();
-
     if track_last_update {
-        if pk_field_info.is_empty() {
-            return Err(Error::new(
-                struct_name.span(),
-                "#[track_last_update] requires at least one #[primary_key] field",
-            ));
-        }
         ddl_args.push(quote! {
             ",\n    __last_written_ms INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)"
         });
     }
 
-    if !pk_field_info.is_empty() {
+    // For #[primary_key] tables, add the PRIMARY KEY constraint and use WITHOUT ROWID.
+    let without_rowid = !pk_field_info.is_empty();
+    if without_rowid {
         let pk_names = pk_field_info
             .iter()
             .map(|(id, _)| id.to_string())
@@ -316,7 +412,12 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         ddl_args.push(quote! { #pk_str });
     }
 
-    ddl_args.push(quote! { "\n);\n" });
+    let close = if without_rowid {
+        "\n) WITHOUT ROWID;\n"
+    } else {
+        "\n);\n"
+    };
+    ddl_args.push(quote! { #close });
 
     // Append CREATE INDEX statements.
     for idx in &indices {
@@ -329,33 +430,38 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         ddl_args.push(quote! { #idx_ddl });
     }
 
-    // SELECT pieces
-    let mut sel_args: Vec<TokenStream> = vec![quote! { "SELECT " }];
+    // SELECT column list (reused in SELECT constant and get_by_xyz queries).
+    let mut sel_col_args: Vec<TokenStream> = Vec::new();
     for (i, f) in fields.iter().enumerate() {
         if i > 0 {
-            sel_args.push(quote! { ", " });
+            sel_col_args.push(quote! { ", " });
         }
         match &f.kind {
             FieldKind::Column { .. } => {
                 let name = f.ident.to_string();
-                sel_args.push(quote! { #name });
+                sel_col_args.push(quote! { #name });
             }
             FieldKind::ColumnGroup { ty, prefix } => {
-                sel_args.push(quote! {
+                sel_col_args.push(quote! {
                     ::balsaq::__cf::str_replace!(<#ty as ::balsaq::ColumnGroup>::COLS, "{P}", #prefix)
                 });
             }
             FieldKind::ColumnGroupVia { raw_ty, prefix, .. } => {
-                sel_args.push(quote! {
+                sel_col_args.push(quote! {
                     ::balsaq::__cf::str_replace!(<#raw_ty as ::balsaq::ColumnGroup>::COLS, "{P}", #prefix)
                 });
             }
         }
     }
-    let from_suffix = format!(" FROM {table}");
-    sel_args.push(quote! { #from_suffix });
 
-    // INSERT col and val pieces
+    // SELECT constant: SELECT <cols> FROM <table>.
+    let from_suffix = format!(" FROM {table}");
+    let sel_args: Vec<TokenStream> = std::iter::once(quote! { "SELECT " })
+        .chain(sel_col_args.iter().cloned())
+        .chain(std::iter::once(quote! { #from_suffix }))
+        .collect();
+
+    // INSERT col and val pieces.
     let ins_prefix = format!("INSERT INTO {table} (");
     let mut ins_col_args: Vec<TokenStream> = Vec::new();
     let mut ins_val_args: Vec<TokenStream> = Vec::new();
@@ -390,21 +496,55 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         }
     }
 
-    let pk_cols = pk_field_info
-        .iter()
-        .map(|(id, _)| id.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let ins_suffix = if track_last_update {
-        format!(
-            ") ON CONFLICT({pk_cols}) DO UPDATE SET \
-             __last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000)"
-        )
+    let ins_suffix = if auto_primary_key {
+        // Always use ON CONFLICT ... DO UPDATE so that RETURNING row_id fires even on conflict.
+        let conflict_target = if !unique_field_info.is_empty() {
+            let cols = unique_field_info
+                .iter()
+                .map(|(id, _)| id.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({cols})")
+        } else {
+            String::new() // no unique column → no conflict possible, DO NOTHING is fine
+        };
+        let update_clause = if track_last_update {
+            "__last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000)".to_owned()
+        } else if conflict_target.is_empty() {
+            // No unique column and no tracking: plain insert, no conflict handling needed.
+            // We still need RETURNING, so use DO NOTHING (conflict can't happen anyway).
+            return Err(Error::new(
+                struct_name.span(),
+                "unreachable: auto_primary_key without unique fields should not reach this path",
+            ));
+        } else {
+            // No-op update so RETURNING fires on both insert and conflict paths.
+            "row_id = row_id".to_owned()
+        };
+
+        if conflict_target.is_empty() {
+            // auto_primary_key, no unique fields: plain insert, no conflict possible.
+            ") ON CONFLICT DO NOTHING RETURNING row_id".to_owned()
+        } else {
+            format!(") ON CONFLICT{conflict_target} DO UPDATE SET {update_clause} RETURNING row_id")
+        }
     } else {
-        ") ON CONFLICT DO NOTHING".to_owned()
+        let pk_cols = pk_field_info
+            .iter()
+            .map(|(id, _)| id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if track_last_update {
+            format!(
+                ") ON CONFLICT({pk_cols}) DO UPDATE SET \
+                 __last_written_ms = MAX(__last_written_ms, unixepoch('now') * 1000)"
+            )
+        } else {
+            ") ON CONFLICT DO NOTHING".to_owned()
+        }
     };
 
-    // from_row and write_params code
+    // from_row and write_stmts code (shared between do_insert implementations).
     let from_row_fields = fields.iter().map(|f| {
         let ident = &f.ident;
         match &f.kind {
@@ -473,7 +613,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         }
     });
 
-    // PrimaryKey type and get() method
+    // PrimaryKey type and get() method.
     let pk_type = match pk_field_info.as_slice() {
         [] => quote! { &'pk ::std::convert::Infallible },
         [(_, ty)] => quote! { &'pk #ty },
@@ -518,9 +658,92 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
         }
     };
 
-    // Assemble final output
+    // InsertId type and do_insert body.
+    let row_id_name = quote::format_ident!("{}RowId", struct_name);
+    let (insert_id_type, do_insert_body) = if auto_primary_key {
+        let body = quote! {
+            #(#raw_decls)*
+            let mut params: ::std::vec::Vec<(
+                ::std::string::String,
+                &dyn ::rusqlite::types::ToSql,
+            )> = ::std::vec::Vec::new();
+            #(#write_stmts)*
+            let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> =
+                params.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+            let __row_id: i64 = conn
+                .prepare_cached(Self::INSERT)?
+                .query_row(params_ref.as_slice(), |r| r.get(0))?;
+            ::std::result::Result::Ok(#row_id_name(__row_id))
+        };
+        (quote! { #row_id_name }, body)
+    } else {
+        let body = quote! {
+            #(#raw_decls)*
+            let mut params: ::std::vec::Vec<(
+                ::std::string::String,
+                &dyn ::rusqlite::types::ToSql,
+            )> = ::std::vec::Vec::new();
+            #(#write_stmts)*
+            let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> =
+                params.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+            conn.prepare_cached(Self::INSERT)?.execute(params_ref.as_slice())?;
+            ::std::result::Result::Ok(())
+        };
+        (quote! { () }, body)
+    };
+
+    // get_by_xyz methods for each #[unique] field (only generated for auto_primary_key tables).
+    let get_by_methods: Vec<TokenStream> = unique_field_info
+        .iter()
+        .map(|(field_ident, field_ty)| {
+            let method_name = quote::format_ident!("get_by_{}", field_ident);
+            let where_clause = format!(" WHERE {} = ?1", field_ident);
+            let table_str = table.as_str();
+            quote! {
+                #vis fn #method_name(
+                    conn: &::rusqlite::Connection,
+                    val: &#field_ty,
+                ) -> ::rusqlite::Result<(#row_id_name, Self)> {
+                    const SQL: &'static str = ::balsaq::__cf::concatcp!(
+                        "SELECT ", #(#sel_col_args),*, ", row_id FROM ", #table_str, #where_clause
+                    );
+                    conn.prepare_cached(SQL)?.query_row((val,), |row| {
+                        ::std::result::Result::Ok((
+                            #row_id_name(row.get("row_id")?),
+                            Self::from_row(row)?,
+                        ))
+                    })
+                }
+            }
+        })
+        .collect();
+
+    // Only emit the RowId newtype and get_by_xyz impl block for auto_primary_key tables.
+    let row_id_and_impl = if auto_primary_key {
+        let get_by_block = if !get_by_methods.is_empty() {
+            quote! {
+                impl #struct_name {
+                    #(#get_by_methods)*
+                }
+            }
+        } else {
+            quote! {}
+        };
+        quote! {
+            #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+            #vis struct #row_id_name(pub i64);
+
+            #get_by_block
+        }
+    } else {
+        quote! {}
+    };
+
+    // Assemble final output.
     let expanded = quote! {
         #item_struct
+
+        #row_id_and_impl
 
         impl ::balsaq::Model for #struct_name {
             const CREATE_TABLE: &'static str = ::balsaq::__cf::concatcp!(#(#ddl_args),*);
@@ -534,24 +757,17 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream
             );
 
             type PrimaryKey<'pk> = #pk_type;
+            type InsertId = #insert_id_type;
 
             fn from_row(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<Self> {
                 Ok(Self { #(#from_row_fields,)* })
             }
 
-            fn write_params(
+            fn do_insert(
                 self,
-                stmt: &mut ::rusqlite::CachedStatement<'_>,
-            ) -> ::rusqlite::Result<usize> {
-                #(#raw_decls)*
-                let mut params: ::std::vec::Vec<(
-                    ::std::string::String,
-                    &dyn ::rusqlite::types::ToSql,
-                )> = ::std::vec::Vec::new();
-                #(#write_stmts)*
-                let params_ref: ::std::vec::Vec<(&str, &dyn ::rusqlite::types::ToSql)> =
-                    params.iter().map(|(k, v)| (k.as_str(), *v)).collect();
-                stmt.execute(params_ref.as_slice())
+                conn: &::rusqlite::Connection,
+            ) -> ::rusqlite::Result<Self::InsertId> {
+                #do_insert_body
             }
 
             fn get<'pk>(
@@ -654,6 +870,46 @@ mod tests {
     }
 
     #[test]
+    fn auto_primary_key_with_unique() {
+        insta::assert_snapshot!(run(
+            quote! { "commits", auto_primary_key },
+            quote! {
+                pub struct Commit {
+                    #[unique]
+                    pub hash: BlobId,
+                    pub data: String,
+                }
+            },
+        ));
+    }
+
+    #[test]
+    fn auto_primary_key_with_unique_and_track() {
+        insta::assert_snapshot!(run(
+            quote! { "commits", auto_primary_key, track_last_update },
+            quote! {
+                pub struct Commit {
+                    #[unique]
+                    pub hash: BlobId,
+                    pub data: String,
+                }
+            },
+        ));
+    }
+
+    #[test]
+    fn auto_primary_key_no_unique() {
+        insta::assert_snapshot!(run(
+            quote! { "things", auto_primary_key },
+            quote! {
+                pub struct Thing {
+                    pub name: String,
+                }
+            },
+        ));
+    }
+
+    #[test]
     fn error_via_extra_args_rejected() {
         let err = run_err(
             quote! { "things" },
@@ -682,6 +938,64 @@ mod tests {
             },
         );
         assert!(err.contains("cannot be both #[group] and #[primary_key]"));
+    }
+
+    #[test]
+    fn error_group_and_unique_on_same_field() {
+        let err = run_err(
+            quote! { "posts", auto_primary_key },
+            quote! {
+                pub struct Post {
+                    #[group]
+                    #[unique]
+                    pub author: AuthorInfo,
+                }
+            },
+        );
+        assert!(err.contains("cannot be both #[group] and #[unique]"));
+    }
+
+    #[test]
+    fn error_primary_key_and_unique_on_same_field() {
+        let err = run_err(
+            quote! { "things" },
+            quote! {
+                pub struct Thing {
+                    #[primary_key]
+                    #[unique]
+                    pub id: i64,
+                }
+            },
+        );
+        assert!(err.contains("cannot be both #[primary_key] and #[unique]"));
+    }
+
+    #[test]
+    fn error_auto_primary_key_and_field_primary_key() {
+        let err = run_err(
+            quote! { "things", auto_primary_key },
+            quote! {
+                pub struct Thing {
+                    #[primary_key]
+                    pub id: i64,
+                }
+            },
+        );
+        assert!(err.contains("`auto_primary_key` and `#[primary_key]` cannot both be used"));
+    }
+
+    #[test]
+    fn error_unique_without_auto_primary_key() {
+        let err = run_err(
+            quote! { "things" },
+            quote! {
+                pub struct Thing {
+                    #[unique]
+                    pub id: i64,
+                }
+            },
+        );
+        assert!(err.contains("`#[unique]` requires `auto_primary_key`"));
     }
 
     #[test]
@@ -827,9 +1141,8 @@ mod tests {
     #[test]
     fn track_last_update_ddl_and_insert() {
         insta::assert_snapshot!(run(
-            quote! { "commits" },
+            quote! { "commits", track_last_update },
             quote! {
-                #[track_last_update]
                 pub struct Commit {
                     #[primary_key]
                     pub id: BlobId,
@@ -842,9 +1155,8 @@ mod tests {
     #[test]
     fn track_last_update_compound_pk() {
         insta::assert_snapshot!(run(
-            quote! { "operation_parents" },
+            quote! { "operation_parents", track_last_update },
             quote! {
-                #[track_last_update]
                 pub struct OperationParent {
                     #[primary_key]
                     pub operation_id: OpId,
@@ -859,30 +1171,27 @@ mod tests {
     #[test]
     fn error_track_last_update_without_pk() {
         let err = run_err(
-            quote! { "things" },
+            quote! { "things", track_last_update },
             quote! {
-                #[track_last_update]
                 pub struct Thing {
                     pub name: String,
                 }
             },
         );
-        assert!(err.contains("#[track_last_update] requires at least one #[primary_key]"));
+        assert!(err.contains("`track_last_update` requires"));
     }
 
     #[test]
-    fn error_track_last_update_with_args() {
+    fn error_unknown_table_flag() {
         let err = run_err(
-            quote! { "things" },
+            quote! { "things", oops },
             quote! {
-                #[track_last_update(oops)]
                 pub struct Thing {
-                    #[primary_key]
-                    pub id: i64,
+                    pub name: String,
                 }
             },
         );
-        assert!(err.contains("takes no arguments"));
+        assert!(err.contains("unknown `#[table]` flag `oops`"));
     }
 
     #[test]

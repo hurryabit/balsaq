@@ -242,12 +242,29 @@ pub struct CommitRootTree {
 
 // ── track_last_update table ───────────────────────────────────────────────────
 
-#[table("tracked_items")]
-#[track_last_update]
+#[table("tracked_items", track_last_update)]
 pub struct TrackedItem {
     #[primary_key]
     pub id: i64,
     pub payload: String,
+}
+
+// ── auto_primary_key table ────────────────────────────────────────────────────
+
+#[table("objects", auto_primary_key)]
+pub struct Object {
+    #[unique]
+    pub hash: BlobId,
+    pub data: Vec<u8>,
+}
+
+// ── auto_primary_key + track_last_update table ────────────────────────────────
+
+#[table("versioned_objects", auto_primary_key, track_last_update)]
+pub struct VersionedObject {
+    #[unique]
+    pub hash: BlobId,
+    pub data: Vec<u8>,
 }
 
 // ── DB setup ──────────────────────────────────────────────────────────────────
@@ -273,6 +290,8 @@ fn setup() -> Connection {
             Fingerprint::CREATE_TABLE,
             CommitRootTree::CREATE_TABLE,
             TrackedItem::CREATE_TABLE,
+            Object::CREATE_TABLE,
+            VersionedObject::CREATE_TABLE,
         ]
         .concat(),
     )
@@ -804,6 +823,132 @@ fn track_last_update_roundtrip() {
         .query_row(
             "SELECT __last_written_ms FROM tracked_items WHERE id = ?1",
             [1i64],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(ms > 0);
+}
+
+// ── auto_primary_key tests ────────────────────────────────────────────────────
+
+#[test]
+fn auto_primary_key_constants() {
+    assert_snapshot!("object_select", Object::SELECT);
+    assert_snapshot!("object_insert", Object::INSERT);
+    assert_snapshot!("object_create_table", Object::CREATE_TABLE);
+    assert_valid_ddl(Object::CREATE_TABLE);
+}
+
+#[test]
+fn auto_primary_key_insert_returns_row_id() {
+    let conn = setup();
+
+    let id1 = insert(
+        &conn,
+        Object {
+            hash: BlobId::new(1),
+            data: vec![0xaa],
+        },
+    )
+    .unwrap();
+    let id2 = insert(
+        &conn,
+        Object {
+            hash: BlobId::new(2),
+            data: vec![0xbb],
+        },
+    )
+    .unwrap();
+
+    assert_ne!(id1, id2);
+    assert!(id1.0 > 0);
+    assert!(id2.0 > 0);
+}
+
+#[test]
+fn auto_primary_key_conflict_returns_existing_row_id() {
+    let conn = setup();
+
+    let id1 = insert(
+        &conn,
+        Object {
+            hash: BlobId::new(42),
+            data: vec![0x01],
+        },
+    )
+    .unwrap();
+    // Second insert with the same hash: must return the same row_id.
+    let id2 = insert(
+        &conn,
+        Object {
+            hash: BlobId::new(42),
+            data: vec![0x02],
+        },
+    )
+    .unwrap();
+
+    assert_eq!(id1, id2);
+}
+
+#[test]
+fn auto_primary_key_get_by_hash() {
+    let conn = setup();
+
+    let row_id = insert(
+        &conn,
+        Object {
+            hash: BlobId::new(7),
+            data: vec![0xde, 0xad],
+        },
+    )
+    .unwrap();
+    let (found_id, found) = Object::get_by_hash(&conn, &BlobId::new(7)).unwrap();
+
+    assert_eq!(found_id, row_id);
+    assert_eq!(found.hash, BlobId::new(7));
+    assert_eq!(found.data, vec![0xde, 0xad]);
+}
+
+#[test]
+fn auto_primary_key_with_track_last_update_constants() {
+    assert_snapshot!("versioned_object_select", VersionedObject::SELECT);
+    assert_snapshot!("versioned_object_insert", VersionedObject::INSERT);
+    assert_snapshot!(
+        "versioned_object_create_table",
+        VersionedObject::CREATE_TABLE
+    );
+    assert_valid_ddl(VersionedObject::CREATE_TABLE);
+}
+
+#[test]
+fn auto_primary_key_with_track_last_update_upserts_timestamp() {
+    let conn = setup();
+
+    let id1 = insert(
+        &conn,
+        VersionedObject {
+            hash: BlobId::new(1),
+            data: vec![0x01],
+        },
+    )
+    .unwrap();
+
+    // Re-insert same hash: must return same row_id and not error.
+    let id2 = insert(
+        &conn,
+        VersionedObject {
+            hash: BlobId::new(1),
+            data: vec![0x01],
+        },
+    )
+    .unwrap();
+
+    assert_eq!(id1, id2);
+
+    let ms: i64 = conn
+        .query_row(
+            "SELECT __last_written_ms FROM versioned_objects WHERE row_id = ?1",
+            [id1.0],
             |r| r.get(0),
         )
         .unwrap();
